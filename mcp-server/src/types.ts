@@ -20,6 +20,22 @@ export interface IndicatorScore {
   updated_at: string;
 }
 
+export interface IndicatorUpdate {
+  indicator_id: string;
+  estimate: number;
+  confidence: number;
+  evidence: string;
+  inference_type: "direct" | "correlated";
+}
+
+export interface Checkpoint {
+  checkpoint_id: string;
+  checkpoint_reason: "scheduled" | "manual" | "pre_finalize";
+  turn_number?: number;
+  timestamp: string;
+  updates: IndicatorUpdate[];
+}
+
 export interface SessionSummary {
   radar_means: {
     behavioral: number;
@@ -37,6 +53,7 @@ export interface Session {
   user_metadata: UserMetadata;
   session_metadata?: SessionMetadata;
   indicator_scores: Record<string, IndicatorScore>;
+  checkpoints?: Checkpoint[];
   summary?: SessionSummary;
   start_time: string;
   end_time?: string;
