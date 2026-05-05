@@ -45,7 +45,7 @@ After each respondent turn:
 2. **Score each informed indicator** against the anchor descriptions. Place the score on the 0.00–1.00 continuum using the four anchor points as calibration references.
 3. **Set confidence** based on evidence quality: vague mention → 0.30–0.40; clear articulation → 0.50–0.70; specific example with details → 0.70–0.90; multiple corroborating examples → 0.85–0.95.
 4. **Apply correlations** — consult the correlation matrix and propagate partial updates to correlated indicators with reduced confidence (correlation strength × 0.5).
-5. **Log updates** — call `log_indicator_update` for every indicator that changed.
+5. **Accumulate updates in working memory.** Track each indicator's current estimate, confidence, and most recent evidence quote in your turn-by-turn reasoning. Do not call `log_indicator_updates` on every turn.
 
 ### Probe selection
 
@@ -82,6 +82,18 @@ Stop the probing loop when ANY of:
 - No remaining probe would meaningfully reduce uncertainty (marginal info gain < 0.05 across the board)
 
 **High-capability override:** If a radar mean exceeds 0.85 but multiple indicators in that radar were informed only via correlation (provenance=`correlation`, confidence < 0.60), do NOT stop. Prioritise 1–2 direct probes for the lowest-evidence indicators in that radar before closing. A high mean built on inferences is less defensible than one built on evidence.
+
+### Checkpoint cadence
+
+Persist accumulated indicator updates to the server in three situations:
+
+1. **Scheduled checkpoint.** Every 10 respondent turns, call `log_indicator_updates` with all indicators whose estimate or confidence has changed since the last checkpoint. Use `checkpoint_reason: "scheduled"` and include `turn_number`.
+2. **Manual checkpoint.** If a turn produces an unusually large state change (e.g., a single answer that informs 10+ indicators), checkpoint immediately. Use `checkpoint_reason: "manual"` and include `turn_number`.
+3. **Pre-finalize checkpoint.** Before calling `log_classification_summary` and `finalize_session`, flush all remaining changes. Use `checkpoint_reason: "pre_finalize"`.
+
+This keeps live-conversation latency low (1 tool call per checkpoint vs. 50+ singular calls) while bounding the worst-case loss to ~10 turns of state if the conversation drops.
+
+Use `log_indicator_updates` (plural). The singular `log_indicator_update` is deprecated.
 
 ---
 
@@ -125,7 +137,7 @@ Run the probe selection algorithm. Ask one probe per turn. After each response:
 
 1. Score all informed indicators.
 2. Apply correlations.
-3. Log updates via `log_indicator_update`.
+3. Accumulate updates in working memory; checkpoint via `log_indicator_updates` if turn count crosses cadence threshold or this turn is unusually update-heavy.
 4. Select next probe.
 
 **Transitions between radars:** Don't announce "now we're moving to the technical section." Instead, bridge naturally: "You mentioned [thing from their answer] — that connects to something I wanted to ask about…"
@@ -1015,7 +1027,7 @@ This fallback ensures no assessment is lost because of a missing tool connection
 |---|---|
 | `start_baseline_session` | Once, after capturing name/role/tenure in the opening |
 | `log_metadata` | Once, after capturing tools_used and frequency |
-| `log_indicator_update` | After each respondent turn, for every indicator that turn informed (may be 1–8 calls per turn). Use `inference_type` to record provenance: `direct` for probe targets, `correlated` for all other sources (incidental, correlation, metadata). |
+| `log_indicator_updates` | Every 10 respondent turns, on large single-turn state changes, and once before `log_classification_summary`. Include `checkpoint_reason` and `turn_number`. Use `inference_type` to record provenance: `direct` for probe targets, `correlated` for all other sources. |
 | `log_classification_summary` | Once, after calculating final scores and before delivering the summary |
 | `finalize_session` | Once, as the very last action after the summary is delivered and any follow-up questions resolved |
 
