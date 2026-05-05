@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "newco-baseline": {
+      "command": "node",
+      "args": ["/Users/michaeldarlington/newco-baseline/mcp-server/dist/index.js"],
+      "env": {
+        "BASELINE_DATA_DIR": "/Users/michaeldarlington/newco-baseline/mcp-server/data/sessions"
+      }
+    }
+  }
+}

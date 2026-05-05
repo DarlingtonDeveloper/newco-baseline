@@ -1,0 +1,20 @@
+{
+  "name": "newco-baseline-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for NewCo AI Capability Baseline assessment persistence",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.8.0"
+  }
+}
