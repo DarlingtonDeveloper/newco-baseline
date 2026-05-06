@@ -1,608 +1,533 @@
 /**
- * End-to-end tests for NewCo Baseline MCP server v2.
- * Covers all acceptance criteria from the v2 spec.
+ * End-to-end tests for NewCo Baseline Bayesian MCP server v1.0.
+ * Tests Beta math, correlation propagation, probe selection, and summary generation.
  * Run: npx tsx test/e2e.ts
  */
-import { SessionStorage } from "../src/storage.js";
-import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
-import { randomUUID } from "node:crypto";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Session, Checkpoint, IndicatorUpdate, InferenceType } from "../src/types.js";
+import { randomUUID } from "node:crypto";
+import {
+  betaMean,
+  betaVariance,
+  effectiveSampleSize,
+  confidence,
+  recordEvidence,
+  computeStateVector,
+  selectNextProbe,
+  generateSummarySkeleton,
+  computeRadarMean,
+  hasDirectEvidence,
+  primarySource,
+} from "../src/math.js";
+import { CORRELATION_MATRIX } from "../src/correlations.js";
+import { PROBE_LIBRARY, INDICATOR_IMPORTANCE } from "../src/probes.js";
+import { rolePriors, toolPriors, frequencyPriors } from "../src/priors.js";
+import { SessionStorage } from "../src/storage.js";
+import type { SessionState, BetaState, Evidence } from "../src/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const TEST_DATA_DIR = join(process.cwd(), "data", "test-sessions");
-const storage = new SessionStorage(TEST_DATA_DIR);
-
 const registryPath = join(__dirname, "..", "src", "indicators.json");
 const registry = JSON.parse(readFileSync(registryPath, "utf-8")) as {
   version: string;
   indicators: string[];
 };
-const validIndicators = new Set(registry.indicators);
 
 let passed = 0;
 let failed = 0;
 
 function assert(name: string, condition: boolean) {
   if (condition) {
-    console.log(`   ✓ ${name}`);
+    console.log(`   + ${name}`);
     passed++;
   } else {
-    console.log(`   ✗ ${name}`);
+    console.log(`   X ${name}`);
     failed++;
   }
 }
 
-async function createTestSession(): Promise<Session> {
-  const session: Session = {
-    session_id: randomUUID(),
-    user_id: "test-user",
-    user_metadata: { name: "Test", role: "Engineer" },
-    indicator_scores: {},
-    checkpoints: [],
-    start_time: new Date().toISOString(),
-  };
-  await storage.save(session);
-  return session;
+function approx(a: number, b: number, tolerance = 0.01): boolean {
+  return Math.abs(a - b) < tolerance;
 }
 
-function makeUpdate(
-  indicatorId: string,
-  estimate: number = 0.75,
-  confidence: number = 0.70,
-  inferenceType: InferenceType = "direct"
-): IndicatorUpdate {
-  return {
-    indicator_id: indicatorId,
-    estimate,
-    confidence,
-    evidence: `Test evidence for ${indicatorId}`,
-    inference_type: inferenceType,
-  };
-}
-
-function makeCheckpoint(
-  updates: IndicatorUpdate[],
-  reason: "scheduled" | "manual" | "pre_finalize" = "scheduled",
-  turnNumber?: number
-): Checkpoint {
-  return {
-    checkpoint_id: randomUUID(),
-    checkpoint_reason: reason,
-    turn_number: turnNumber,
-    timestamp: new Date().toISOString(),
-    updates,
-  };
-}
-
-// ── Test 1: Batched checkpoint persists all indicators ──
-async function testBatchedCheckpoint() {
-  console.log("\n1. Batched checkpoint persists all indicators");
-  const session = await createTestSession();
-
-  const updates = [
-    makeUpdate("behavioral.delegation.sets_explicit_goals", 0.75, 0.70),
-    makeUpdate("behavioral.description.iterates_and_refines", 0.95, 0.90),
-    makeUpdate("technical.memory_retrieval.rag", 0.85, 0.80),
-  ];
-
-  const cp = makeCheckpoint(updates, "scheduled", 10);
-  storage.appendCheckpoint(session, cp);
-  await storage.save(session);
-
-  const loaded = await storage.load(session.session_id);
-  assert("Session loads after checkpoint", loaded !== null);
-  assert(
-    "All 3 indicators in indicator_scores",
-    Object.keys(loaded!.indicator_scores).length === 3
-  );
-  assert(
-    "Checkpoint appended",
-    loaded!.checkpoints!.length === 1
-  );
-  assert(
-    "Checkpoint has correct turn_number",
-    loaded!.checkpoints![0].turn_number === 10
-  );
-  assert(
-    "Checkpoint reason is scheduled",
-    loaded!.checkpoints![0].checkpoint_reason === "scheduled"
-  );
-
-  return session.session_id;
-}
-
-// ── Test 2: Merged state matches v1-style single writes ──
-async function testMergedStateEquivalence() {
-  console.log("\n2. Merged state from checkpoints matches v1-style single writes");
-  const session = await createTestSession();
-
-  // Simulate v1: direct writes
-  const v1Scores: Record<string, typeof session.indicator_scores[string]> = {};
-  const indicators = [
-    "behavioral.delegation.sets_explicit_goals",
-    "behavioral.description.iterates_and_refines",
-    "technical.memory_retrieval.rag",
-  ];
-
-  const timestamp = new Date().toISOString();
-  for (const id of indicators) {
-    v1Scores[id] = {
+function createSession(): SessionState {
+  const indicators: Record<string, BetaState> = {};
+  for (const id of registry.indicators) {
+    indicators[id] = {
       indicator_id: id,
-      estimate: 0.80,
-      confidence: 0.70,
-      evidence: `Evidence for ${id}`,
-      inference_type: "direct",
-      updated_at: timestamp,
+      alpha: 1.0,
+      beta: 1.0,
+      evidence_log: [],
     };
   }
-
-  // Simulate v2: batched checkpoint
-  const updates = indicators.map((id) =>
-    makeUpdate(id, 0.80, 0.70)
-  );
-  // Override evidence to match
-  updates.forEach((u) => (u.evidence = `Evidence for ${u.indicator_id}`));
-
-  const cp: Checkpoint = {
-    checkpoint_id: randomUUID(),
-    checkpoint_reason: "scheduled",
-    timestamp,
-    updates,
+  return {
+    session_id: randomUUID(),
+    user_id: "test-user",
+    user_metadata: { name: "Test User", role: "Engineer" },
+    indicators,
+    start_time: new Date().toISOString(),
   };
-  storage.appendCheckpoint(session, cp);
-
-  // Compare
-  for (const id of indicators) {
-    assert(
-      `${id} estimate matches`,
-      session.indicator_scores[id].estimate === v1Scores[id].estimate
-    );
-    assert(
-      `${id} confidence matches`,
-      session.indicator_scores[id].confidence === v1Scores[id].confidence
-    );
-    assert(
-      `${id} evidence matches`,
-      session.indicator_scores[id].evidence === v1Scores[id].evidence
-    );
-  }
-
-  return session.session_id;
 }
 
-// ── Test 3: Crash recovery — turn-10 checkpoint survives ──
-async function testCrashRecovery() {
-  console.log("\n3. Crash recovery: turn-10 checkpoint survives a dropped conversation");
-  const session = await createTestSession();
+// ── Test groups ─────────────────────────────────────
 
-  // Checkpoint at turn 10 with 20 indicators
-  const turn10Updates = registry.indicators.slice(0, 20).map((id) =>
-    makeUpdate(id, 0.60, 0.55)
-  );
-  const cp10 = makeCheckpoint(turn10Updates, "scheduled", 10);
-  storage.appendCheckpoint(session, cp10);
-  await storage.save(session);
+async function testBetaMath() {
+  console.log("\n Beta distribution math");
 
-  // Simulate crash: reload from disk (no turn 11-16 data)
-  const recovered = await storage.load(session.session_id);
-  assert("Recovered session exists", recovered !== null);
-  assert(
-    "Recovered session has 20 indicators from turn-10 checkpoint",
-    Object.keys(recovered!.indicator_scores).length === 20
-  );
-  assert(
-    "Recovered session has 1 checkpoint",
-    recovered!.checkpoints!.length === 1
-  );
+  // Beta(1,1) — uniform prior
+  const uniform: BetaState = { indicator_id: "test", alpha: 1, beta: 1, evidence_log: [] };
+  assert("Beta(1,1) mean = 0.5", approx(betaMean(uniform), 0.5));
+  assert("Beta(1,1) effective n = 0", approx(effectiveSampleSize(uniform), 0));
+  assert("Beta(1,1) confidence = 0", approx(confidence(uniform), 0));
+  assert("Beta(1,1) variance = 0.083", approx(betaVariance(uniform), 0.083, 0.001));
 
-  return session.session_id;
+  // Beta(4,1) — strong high evidence
+  const high: BetaState = { indicator_id: "test", alpha: 4, beta: 1, evidence_log: [] };
+  assert("Beta(4,1) mean = 0.8", approx(betaMean(high), 0.8));
+  assert("Beta(4,1) n = 3", approx(effectiveSampleSize(high), 3));
+  assert("Beta(4,1) confidence = 0.5", approx(confidence(high), 0.5));
+
+  // Beta(1,4) — strong low evidence
+  const low: BetaState = { indicator_id: "test", alpha: 1, beta: 4, evidence_log: [] };
+  assert("Beta(1,4) mean = 0.2", approx(betaMean(low), 0.2));
+
+  // Confidence curve
+  const n3: BetaState = { indicator_id: "test", alpha: 2.5, beta: 2.5, evidence_log: [] };
+  assert("n=3 confidence ~ 0.5", approx(confidence(n3), 0.5));
+
+  const n10: BetaState = { indicator_id: "test", alpha: 6, beta: 6, evidence_log: [] };
+  assert("n=10 confidence ~ 0.77", approx(confidence(n10), 0.77, 0.01));
 }
 
-// ── Test 4: Unknown indicator ID produces warning, not error ──
-async function testUnknownIndicator() {
-  console.log("\n4. Unknown indicator_id is warned and skipped");
-  const session = await createTestSession();
+async function testRecordEvidence() {
+  console.log("\n Evidence recording");
 
-  const updates = [
-    makeUpdate("behavioral.delegation.sets_explicit_goals", 0.75, 0.70),
-    makeUpdate("behavioral.fake.nonexistent_indicator", 0.50, 0.30),
-    makeUpdate("technical.memory_retrieval.rag", 0.85, 0.80),
-  ];
+  const session = createSession();
+  const id = "behavioral.description.iterates_and_refines";
 
-  // Filter unknown (simulating server behavior)
-  const warnings: string[] = [];
-  const validUpdates = updates.filter((u) => {
-    if (!validIndicators.has(u.indicator_id)) {
-      warnings.push(`Unknown indicator_id dropped: ${u.indicator_id}`);
-      return false;
-    }
-    return true;
+  // Strong direct evidence of high capability (worked example from spec §8)
+  const result = recordEvidence(session, {
+    indicator_id: id,
+    anchor: 1.0,
+    strength: 2,
+    source: "direct",
+    quote: "I always iterate; first answer is a draft.",
+    turn: 2,
+    probe_id: "behavioral.description.iterates_and_refines_primary",
   });
 
-  const cp = makeCheckpoint(validUpdates, "scheduled", 5);
-  storage.appendCheckpoint(session, cp);
-  await storage.save(session);
+  const state = session.indicators[id];
+  // alpha: 1.0 + 1.00 × 2.0 = 3.0, beta: 1.0 + 0.00 × 2.0 = 1.0
+  assert("Direct high: alpha = 3.0", approx(state.alpha, 3.0));
+  assert("Direct high: beta = 1.0", approx(state.beta, 1.0));
+  assert("Direct high: mean = 0.75", approx(betaMean(state), 0.75));
+  assert("Direct high: confidence = 0.4", approx(confidence(state), 0.4));
+  assert("Evidence log has 1 entry", state.evidence_log.length === 1);
+  assert("Source is direct", state.evidence_log[0].source === "direct");
 
-  assert("Warning generated for unknown indicator", warnings.length === 1);
-  assert(
-    "Warning mentions the bad ID",
-    warnings[0].includes("nonexistent_indicator")
-  );
-  assert(
-    "Only 2 valid indicators persisted",
-    Object.keys(session.indicator_scores).length === 2
-  );
-  assert(
-    "Valid indicators are correct",
-    "behavioral.delegation.sets_explicit_goals" in session.indicator_scores &&
-      "technical.memory_retrieval.rag" in session.indicator_scores
-  );
-
-  return session.session_id;
+  // Propagation log should contain correlated updates
+  assert("Propagation log is non-empty", result.propagation_log.length > 0);
+  assert("State vector has 51 entries", Object.keys(result.state_vector).length === 51);
 }
 
-// ── Test 5: Duplicate indicator within one batch — last wins ──
-async function testDuplicateLastWins() {
-  console.log("\n5. Duplicate indicator_id within one batch: last-wins");
-  const session = await createTestSession();
+async function testSourceWeighting() {
+  console.log("\n Source quality weighting");
 
-  const updates = [
-    makeUpdate("behavioral.delegation.sets_explicit_goals", 0.50, 0.40),
-    makeUpdate("behavioral.delegation.sets_explicit_goals", 0.85, 0.80),
-  ];
+  // Direct: full weight
+  const s1 = createSession();
+  recordEvidence(s1, {
+    indicator_id: "technical.memory_retrieval.rag",
+    anchor: 0.67, strength: 2, source: "direct",
+    quote: "test", turn: 1,
+  });
+  const directState = s1.indicators["technical.memory_retrieval.rag"];
+  // alpha: 1.0 + 0.67 × 2.0 = 2.34
+  assert("Direct weight: alpha ~ 2.34", approx(directState.alpha, 2.34));
 
-  const cp = makeCheckpoint(updates, "scheduled", 5);
-  storage.appendCheckpoint(session, cp);
+  // Incidental: 0.7× weight
+  const s2 = createSession();
+  recordEvidence(s2, {
+    indicator_id: "technical.memory_retrieval.rag",
+    anchor: 0.67, strength: 2, source: "incidental",
+    quote: "test", turn: 1,
+  });
+  const incState = s2.indicators["technical.memory_retrieval.rag"];
+  // alpha: 1.0 + 0.67 × (2 × 0.7) = 1.0 + 0.67 × 1.4 = 1.938
+  assert("Incidental weight: alpha ~ 1.94", approx(incState.alpha, 1.938, 0.01));
 
-  assert(
-    "Last-wins: estimate is 0.85",
-    session.indicator_scores["behavioral.delegation.sets_explicit_goals"].estimate ===
-      0.85
-  );
-  assert(
-    "Last-wins: confidence is 0.80",
-    session.indicator_scores["behavioral.delegation.sets_explicit_goals"].confidence ===
-      0.80
-  );
-
-  return session.session_id;
+  // Metadata: 0.4× weight
+  const s3 = createSession();
+  recordEvidence(s3, {
+    indicator_id: "technical.memory_retrieval.rag",
+    anchor: 0.67, strength: 1, source: "metadata",
+    quote: "test", turn: 0,
+  });
+  const metaState = s3.indicators["technical.memory_retrieval.rag"];
+  // alpha: 1.0 + 0.67 × (1 × 0.4) = 1.0 + 0.268 = 1.268
+  assert("Metadata weight: alpha ~ 1.27", approx(metaState.alpha, 1.268, 0.01));
 }
 
-// ── Test 6: Finalized session rejects new checkpoints ──
-async function testFinalizedSessionRejectsUpdates() {
-  console.log("\n6. Finalized session rejects new checkpoints");
-  const session = await createTestSession();
+async function testCorrelationPropagation() {
+  console.log("\n Correlation propagation");
 
-  // Finalize
-  session.end_time = new Date().toISOString();
-  session.duration_minutes = 22;
-  session.completion_state = "complete";
-  session.consent_to_share_with_org = true;
-  await storage.save(session);
+  const session = createSession();
 
-  // Reload and check
-  const loaded = await storage.load(session.session_id);
-  assert("Session is finalized", loaded!.completion_state === "complete");
+  // Record evidence for embeddings — should propagate to RAG (r=0.8)
+  const result = recordEvidence(session, {
+    indicator_id: "technical.memory_retrieval.embeddings",
+    anchor: 1.0, strength: 3, source: "direct",
+    quote: "Deep embedding expertise", turn: 3,
+  });
 
-  // The server checks completion_state before accepting updates.
-  // Simulate: check that completion_state is set.
-  assert(
-    "completion_state blocks further updates (server-side check)",
-    loaded!.completion_state !== undefined
+  // Check RAG got a correlated update
+  const ragState = session.indicators["technical.memory_retrieval.rag"];
+  const ragCorrelatedEntries = ragState.evidence_log.filter(e => e.source === "correlated");
+  assert("RAG received correlated update", ragCorrelatedEntries.length > 0);
+
+  if (ragCorrelatedEntries.length > 0) {
+    const entry = ragCorrelatedEntries[0];
+    assert("Correlated entry from embeddings", entry.from_indicator === "technical.memory_retrieval.embeddings");
+    assert("Correlation r = 0.8", approx(entry.correlation_r ?? 0, 0.8));
+    // target_anchor = 0.5 + 0.8 × (1.0 - 0.5) = 0.9
+    assert("Target anchor ~ 0.9", approx(entry.anchor, 0.9));
+    // target_weight = 0.8 × 3 × 1.0 × 0.3 = 0.72
+    assert("Target weight ~ 0.72", approx(entry.weight, 0.72));
+  }
+
+  // RAG mean should have shifted upward from 0.5
+  assert("RAG mean shifted up", betaMean(ragState) > 0.5);
+  // But confidence should be low (correlation only)
+  assert("RAG confidence < 0.5 (correlation only)", confidence(ragState) < 0.5);
+
+  // Propagation log should include RAG
+  const ragPropEntry = result.propagation_log.find(
+    (p) => p.target_id === "technical.memory_retrieval.rag"
   );
-
-  return session.session_id;
+  assert("Propagation log includes RAG", ragPropEntry !== undefined);
 }
 
-// ── Test 7: Deprecated singular tool wraps to checkpoint ──
-async function testDeprecatedSingularTool() {
-  console.log("\n7. Deprecated singular tool wraps into a checkpoint");
-  const session = await createTestSession();
+async function testNegativeCorrelation() {
+  console.log("\n Negative/co-movement correlations");
 
-  // Simulate what the deprecated tool does: wrap single update into checkpoint
-  const cp: Checkpoint = {
-    checkpoint_id: randomUUID(),
-    checkpoint_reason: "manual",
-    timestamp: new Date().toISOString(),
-    updates: [
-      makeUpdate("behavioral.delegation.sets_explicit_goals", 0.70, 0.60),
-    ],
-  };
+  const session = createSession();
 
-  storage.appendCheckpoint(session, cp);
-  await storage.save(session);
+  // tokenisation_and_context has co-movement correlation with kv_cache (+0.9)
+  // When tokenisation scores LOW, kv_cache should shift LOW too
+  recordEvidence(session, {
+    indicator_id: "technical.model_fundamentals.tokenisation_and_context",
+    anchor: 0.0, strength: 3, source: "direct",
+    quote: "No idea what tokens are", turn: 2,
+  });
 
-  const loaded = await storage.load(session.session_id);
-  assert(
-    "Singular update persisted as checkpoint",
-    loaded!.checkpoints!.length === 1
-  );
-  assert(
-    "Indicator score present in merged state",
-    loaded!.indicator_scores["behavioral.delegation.sets_explicit_goals"]
-      .estimate === 0.70
-  );
-
-  return session.session_id;
+  const kvState = session.indicators["technical.memory_retrieval.kv_cache"];
+  // With positive r=0.9 and anchor=0.0:
+  // target_anchor = 0.5 + 0.9 × (0.0 - 0.5) = 0.5 - 0.45 = 0.05
+  // This pushes kv_cache toward low, which is correct co-movement
+  assert("KV cache mean shifted down", betaMean(kvState) < 0.5);
 }
 
-// ── Test 8: Replay checkpoints matches merged state ──
-async function testReplayCheckpoints() {
-  console.log("\n8. Replay checkpoints produces identical state to live merge");
-  const session = await createTestSession();
+async function testProbeSelection() {
+  console.log("\n Probe selection (EIG)");
 
-  // Checkpoint 1: turn 10
-  const cp1 = makeCheckpoint(
-    [
-      makeUpdate("behavioral.delegation.sets_explicit_goals", 0.60, 0.50),
-      makeUpdate("technical.memory_retrieval.rag", 0.70, 0.60),
-    ],
-    "scheduled",
-    10
-  );
-  storage.appendCheckpoint(session, cp1);
+  const session = createSession();
 
-  // Checkpoint 2: turn 16 — updates one, adds one
-  const cp2 = makeCheckpoint(
-    [
-      makeUpdate("behavioral.delegation.sets_explicit_goals", 0.85, 0.80),
-      makeUpdate("operational.deployment.eval_pipelines", 0.95, 0.90),
-    ],
-    "pre_finalize",
-    16
-  );
-  storage.appendCheckpoint(session, cp2);
+  // With uniform priors, master signal should rank high
+  const result = selectNextProbe(session, [], 25);
+  assert("Returns 5 ranked probes", result.ranked_probes.length === 5);
+  assert("stop_recommended = false", result.stop_recommended === false);
 
-  // Replay
-  const replayed = storage.replayCheckpoints(session);
-
-  assert(
-    "Replayed state has 3 indicators",
-    Object.keys(replayed).length === 3
-  );
-  assert(
-    "Replayed goals estimate is 0.85 (superseded)",
-    replayed["behavioral.delegation.sets_explicit_goals"].estimate === 0.85
-  );
-  assert(
-    "Replayed rag estimate is 0.70 (unchanged)",
-    replayed["technical.memory_retrieval.rag"].estimate === 0.70
-  );
-  assert(
-    "Replayed eval_pipelines estimate is 0.95 (added in cp2)",
-    replayed["operational.deployment.eval_pipelines"].estimate === 0.95
-  );
-
-  // Compare to live merged state
-  for (const id of Object.keys(replayed)) {
-    assert(
-      `Live vs replay match: ${id}`,
-      session.indicator_scores[id].estimate === replayed[id].estimate &&
-        session.indicator_scores[id].confidence === replayed[id].confidence
+  // The master signal should be in top 3 (importance=2.0)
+  const masterInTop3 = result.ranked_probes
+    .slice(0, 3)
+    .some((p) =>
+      p.target_indicators["behavioral.description.iterates_and_refines"] !== undefined
     );
+  assert("Master signal in top 3", masterInTop3);
+
+  // After recording strong evidence for many indicators, EIG should decrease
+  const session2 = createSession();
+  for (const id of registry.indicators.slice(0, 30)) {
+    recordEvidence(session2, {
+      indicator_id: id,
+      anchor: 0.67, strength: 3, source: "direct",
+      quote: "strong evidence", turn: 5,
+    });
   }
-
-  return session.session_id;
-}
-
-// ── Test 9: Indicator registry has 51 entries ──
-function testIndicatorRegistry() {
-  console.log("\n9. Indicator registry validation");
-  assert("Registry has 51 indicators", registry.indicators.length === 51);
+  const result2 = selectNextProbe(session2, [], 25);
   assert(
-    "All IDs match pattern",
-    registry.indicators.every((id: string) =>
-      /^(behavioral|technical|operational)\.[a-z_]+\.[a-z_]+$/.test(id)
-    )
-  );
-  assert(
-    "No duplicates",
-    new Set(registry.indicators).size === registry.indicators.length
+    "After evidence: top EIG lower than initial",
+    result2.ranked_probes[0].eig_score < result.ranked_probes[0].eig_score
   );
 }
 
-// ── Test 10: All four inference_type values persist correctly ──
-async function testInferenceTypes() {
-  console.log("\n10. All four inference_type values persist correctly");
-  const session = await createTestSession();
+async function testStoppingConditions() {
+  console.log("\n Stopping conditions");
 
-  const updates = [
-    makeUpdate("behavioral.delegation.sets_explicit_goals", 0.90, 0.85, "direct"),
-    makeUpdate("behavioral.delegation.decides_task_fit", 0.80, 0.65, "incidental"),
-    makeUpdate("behavioral.delegation.sets_collaboration_terms", 0.70, 0.50, "correlated"),
-    makeUpdate("behavioral.description.provides_context", 0.60, 0.40, "metadata"),
-  ];
+  // Time budget reached
+  const session = createSession();
+  const timeResult = selectNextProbe(session, [], 1.5);
+  assert("Time budget: stop recommended", timeResult.stop_recommended === true);
+  assert("Time budget: correct reason", timeResult.stop_reason === "time_budget_reached");
 
-  const cp = makeCheckpoint(updates, "scheduled", 5);
-  storage.appendCheckpoint(session, cp);
-  await storage.save(session);
-
-  const loaded = await storage.load(session.session_id);
-  assert(
-    "direct inference_type persisted",
-    loaded!.indicator_scores["behavioral.delegation.sets_explicit_goals"].inference_type === "direct"
-  );
-  assert(
-    "incidental inference_type persisted",
-    loaded!.indicator_scores["behavioral.delegation.decides_task_fit"].inference_type === "incidental"
-  );
-  assert(
-    "correlated inference_type persisted",
-    loaded!.indicator_scores["behavioral.delegation.sets_collaboration_terms"].inference_type === "correlated"
-  );
-  assert(
-    "metadata inference_type persisted",
-    loaded!.indicator_scores["behavioral.description.provides_context"].inference_type === "metadata"
-  );
-
-  return session.session_id;
+  // All confidences met (force all indicators to high confidence)
+  const session2 = createSession();
+  for (const id of registry.indicators) {
+    // Add enough evidence to push confidence above 0.6
+    for (let i = 0; i < 5; i++) {
+      recordEvidence(session2, {
+        indicator_id: id,
+        anchor: 0.67, strength: 3, source: "direct",
+        quote: "strong", turn: i + 1,
+      });
+    }
+  }
+  const confResult = selectNextProbe(session2, [], 20);
+  assert("All confident: stop recommended", confResult.stop_recommended === true);
+  assert("All confident: correct reason", confResult.stop_reason === "all_confidences_met");
 }
 
-// ── Test 11: Indicator registry is queryable ──
-function testIndicatorRegistryQueryable() {
-  console.log("\n11. Indicator registry is queryable (list_indicators contract)");
-  assert("Registry has version field", typeof registry.version === "string");
-  assert("Registry has indicators array", Array.isArray(registry.indicators));
-  assert("Registry has 51 indicators", registry.indicators.length === 51);
+async function testSummarySkeleton() {
+  console.log("\n Summary skeleton");
+
+  const session = createSession();
+
+  // Add varied evidence
+  recordEvidence(session, {
+    indicator_id: "behavioral.description.iterates_and_refines",
+    anchor: 1.0, strength: 3, source: "direct",
+    quote: "Iterates on everything", turn: 2,
+  });
+  recordEvidence(session, {
+    indicator_id: "technical.memory_retrieval.rag",
+    anchor: 0.67, strength: 2, source: "incidental",
+    quote: "Mentioned RAG in passing", turn: 3,
+  });
+  recordEvidence(session, {
+    indicator_id: "operational.cli_tooling.terminal",
+    anchor: 0.0, strength: 2, source: "direct",
+    quote: "Never uses terminal", turn: 4,
+  });
+
+  const skeleton = generateSummarySkeleton(session);
+
+  assert("Has 3 radar means", "behavioral" in skeleton.radar_means && "technical" in skeleton.radar_means && "operational" in skeleton.radar_means);
+  assert("Radar means are numbers", typeof skeleton.radar_means.behavioral === "number");
+  assert("Has strengths array", Array.isArray(skeleton.strengths));
+  assert("Has growth_areas array", Array.isArray(skeleton.growth_areas));
+  assert("Strengths length <= 3", skeleton.strengths.length <= 3);
+  assert("Growth areas length <= 2", skeleton.growth_areas.length <= 2);
+  assert("Coverage total = 51", skeleton.coverage_breakdown.total_indicators === 51);
+  assert("Has quality flags", Array.isArray(skeleton.quality_flags));
+
+  // Coverage should reflect what we recorded
+  assert("Some direct evidence", skeleton.coverage_breakdown.direct >= 2);
+  assert("Some incidental evidence", skeleton.coverage_breakdown.incidental >= 1);
+}
+
+async function testMetadataPriors() {
+  console.log("\n Metadata priors");
+
+  // Role priors
+  const aiPriors = rolePriors("AI Platform Engineer");
+  assert("AI engineer gets role priors", aiPriors.length > 0);
+  const hasTechnical = aiPriors.some((p) => p.indicator_id.startsWith("technical."));
+  assert("AI engineer priors include technical indicators", hasTechnical);
+
+  const kwPriors = rolePriors("Marketing Manager");
+  // Knowledge workers may get no shifts or minimal shifts
+  assert("Knowledge worker priors exist (may be empty)", Array.isArray(kwPriors));
+
+  // Tool priors
+  const ccPriors = toolPriors("Claude Code");
+  assert("Claude Code gets tool priors", ccPriors.length > 0);
+  const hasDevTools = ccPriors.some(
+    (p) => p.indicator_id === "operational.cli_tooling.ai_native_dev_tools"
+  );
+  assert("Claude Code priors include ai_native_dev_tools", hasDevTools);
+
+  // Frequency priors
+  const dailyPriors = frequencyPriors("daily, multiple times");
+  assert("Daily frequency gets priors", dailyPriors.length > 0);
+
+  const weeklyPriors = frequencyPriors("weekly");
+  assert("Weekly frequency returns array (may be empty)", Array.isArray(weeklyPriors));
+}
+
+async function testCorrelationMatrix() {
+  console.log("\n Correlation matrix");
+
+  assert("Matrix is non-empty", Object.keys(CORRELATION_MATRIX).length > 0);
+
+  // Check specific known correlations
+  const embToRag = CORRELATION_MATRIX["technical.memory_retrieval.embeddings"]?.["technical.memory_retrieval.rag"];
+  assert("embeddings -> rag exists", embToRag !== undefined);
+  assert("embeddings -> rag = 0.8", approx(embToRag ?? 0, 0.8));
+
+  const ragToEmb = CORRELATION_MATRIX["technical.memory_retrieval.rag"]?.["technical.memory_retrieval.embeddings"];
+  assert("rag -> embeddings exists", ragToEmb !== undefined);
+  assert("rag -> embeddings = 0.8", approx(ragToEmb ?? 0, 0.8));
+
+  // Check no self-correlations
+  let selfCorr = false;
+  for (const [source, targets] of Object.entries(CORRELATION_MATRIX)) {
+    if (targets[source] !== undefined) selfCorr = true;
+  }
+  assert("No self-correlations", !selfCorr);
+
+  // All indicator IDs in matrix should be valid
+  let allValid = true;
+  for (const [source, targets] of Object.entries(CORRELATION_MATRIX)) {
+    if (!registry.indicators.includes(source)) { allValid = false; break; }
+    for (const target of Object.keys(targets)) {
+      if (!registry.indicators.includes(target)) { allValid = false; break; }
+    }
+  }
+  assert("All matrix indicator IDs are valid", allValid);
+}
+
+async function testProbeLibrary() {
+  console.log("\n Probe library");
+
+  assert("Library has 51 probes", PROBE_LIBRARY.length === 51);
+
+  // Each probe has required fields
+  let allValid = true;
+  for (const probe of PROBE_LIBRARY) {
+    if (!probe.probe_id || !probe.indicator_id || !probe.text || !probe.backup_text) {
+      allValid = false;
+      break;
+    }
+    if (!probe.target_indicators[probe.indicator_id]) {
+      allValid = false;
+      break;
+    }
+  }
+  assert("All probes have required fields", allValid);
+
+  // Primary targets should have info_strength = 1.0
+  const allPrimaryOne = PROBE_LIBRARY.every(
+    (p) => p.target_indicators[p.indicator_id] === 1.0
+  );
+  assert("All primary targets have info_strength 1.0", allPrimaryOne);
+
+  // Master signal importance
   assert(
-    "Registry is JSON-serializable",
-    JSON.parse(JSON.stringify(registry)).indicators.length === 51
+    "Master signal importance = 2.0",
+    INDICATOR_IMPORTANCE["behavioral.description.iterates_and_refines"] === 2.0
   );
 }
 
-// ── Test 12: Enriched classification summary ──
-async function testEnrichedClassificationSummary() {
-  console.log("\n12. Enriched classification summary with coverage and flags");
-  const session = await createTestSession();
+async function testStoragePersistence() {
+  console.log("\n Storage persistence");
 
-  session.summary = {
-    radar_means: { behavioral: 0.86, technical: 0.83, operational: 0.82 },
-    strengths: ["operational.mcp_integrations.mcp_server_use"],
-    growth_areas: ["technical.memory_retrieval.kv_cache"],
-    practice_suggestion: "Try a prefix-cache experiment",
-    coverage: {
-      total_indicators: 51,
-      directly_probed: 12,
-      incidental: 13,
-      correlated: 16,
-      metadata: 0,
-      unscored: 10,
-    },
-    flags: ["partial_completion"],
-  };
-  await storage.save(session);
-
-  const loaded = await storage.load(session.session_id);
-  assert("Coverage field persisted", loaded!.summary!.coverage !== undefined);
-  assert(
-    "Coverage total_indicators is 51",
-    loaded!.summary!.coverage!.total_indicators === 51
-  );
-  assert(
-    "Coverage directly_probed is 12",
-    loaded!.summary!.coverage!.directly_probed === 12
-  );
-  assert(
-    "Coverage unscored is 10",
-    loaded!.summary!.coverage!.unscored === 10
-  );
-  assert("Flags field persisted", loaded!.summary!.flags !== undefined);
-  assert(
-    "Flags contains partial_completion",
-    loaded!.summary!.flags!.includes("partial_completion")
-  );
-
-  return session.session_id;
+  const testStorage = new SessionStorage(join(process.cwd(), "data", "test-sessions"));
+  const testId = randomUUID();
+  const blob = { session_id: testId, test: true };
+  const uri = await testStorage.writeSessionBlob(testId, blob);
+  assert("Returns file:// URI", uri.startsWith("file://"));
+  assert("URI contains session ID", uri.includes(testId));
 }
 
-// ── Test 13: Finalize returns enriched response ──
-async function testFinalizeEnrichedResponse() {
-  console.log("\n13. Finalize session returns enriched response data");
-  const session = await createTestSession();
+async function testWorkedExample() {
+  console.log("\n Worked example (spec section 8)");
 
-  // Add some indicators
-  const updates = [
-    makeUpdate("behavioral.delegation.sets_explicit_goals", 0.90, 0.85, "direct"),
-    makeUpdate("technical.tool_use.mcp", 1.00, 0.95, "direct"),
-  ];
-  const cp = makeCheckpoint(updates, "scheduled", 10);
-  storage.appendCheckpoint(session, cp);
+  const session = createSession();
 
-  session.summary = {
-    radar_means: { behavioral: 0.90, technical: 1.00, operational: 0.00 },
-    strengths: ["technical.tool_use.mcp"],
-    growth_areas: ["technical.memory_retrieval.kv_cache"],
-    practice_suggestion: "Test practice",
-  };
+  // Turn 2: first probe — iterates_and_refines
+  // Respondent: "I usually iterate on the system prompt to get the chunking strategy right for our RAG"
 
-  session.end_time = new Date().toISOString();
-  session.duration_minutes = 15;
-  session.completion_state = "partial";
-  session.consent_to_share_with_org = false;
-  await storage.save(session);
+  // Primary: iterates_and_refines, anchor=1.00, strength=2, direct
+  recordEvidence(session, {
+    indicator_id: "behavioral.description.iterates_and_refines",
+    anchor: 1.0, strength: 2, source: "direct",
+    quote: "I usually iterate on the system prompt...",
+    turn: 2, probe_id: "behavioral.description.iterates_and_refines_primary",
+  });
 
-  const loaded = await storage.load(session.session_id);
-  assert(
-    "Finalized session has 2 indicators",
-    Object.keys(loaded!.indicator_scores).length === 2
-  );
-  assert(
-    "Finalized session has summary",
-    loaded!.summary !== undefined
-  );
-  assert(
-    "Finalized session is partial",
-    loaded!.completion_state === "partial"
-  );
+  // Incidental: system_vs_user_roles, anchor=0.67, strength=2
+  recordEvidence(session, {
+    indicator_id: "technical.prompting.system_vs_user_roles",
+    anchor: 0.67, strength: 2, source: "incidental",
+    quote: "iterate on the system prompt",
+    turn: 2,
+  });
 
-  return session.session_id;
+  // Incidental: RAG, anchor=0.67, strength=2
+  recordEvidence(session, {
+    indicator_id: "technical.memory_retrieval.rag",
+    anchor: 0.67, strength: 2, source: "incidental",
+    quote: "chunking strategy right for our RAG",
+    turn: 2,
+  });
+
+  // Check iterates_and_refines: α=3.0, β=1.0, μ=0.75
+  const iterState = session.indicators["behavioral.description.iterates_and_refines"];
+  assert("Worked example: iter α ~ 3.0", approx(iterState.alpha, 3.0, 0.1));
+  assert("Worked example: iter β ~ 1.0", approx(iterState.beta, 1.0, 0.1));
+  assert("Worked example: iter mean ~ 0.75", approx(betaMean(iterState), 0.75, 0.05));
+
+  // Check RAG: incidental, α ~ 1.94, β ~ 1.46, μ ~ 0.571
+  const ragState = session.indicators["technical.memory_retrieval.rag"];
+  assert("Worked example: rag α ~ 1.94", approx(ragState.alpha, 1.94, 0.15));
+  assert("Worked example: rag mean ~ 0.57", approx(betaMean(ragState), 0.57, 0.1));
+
+  // Embeddings should have received correlated update from RAG (r=0.8)
+  const embState = session.indicators["technical.memory_retrieval.embeddings"];
+  const embCorrelated = embState.evidence_log.filter(e => e.source === "correlated");
+  assert("Worked example: embeddings got correlated updates", embCorrelated.length > 0);
 }
 
-// ── Test 14: Storage dataDir is publicly readable ──
-function testStorageDataDirReadable() {
-  console.log("\n14. Storage dataDir is publicly readable for finalize_session path");
-  assert(
-    "dataDir is accessible",
-    typeof storage.dataDir === "string" && storage.dataDir.length > 0
-  );
+async function testRadarMeans() {
+  console.log("\n Radar means");
+
+  const session = createSession();
+
+  // Record evidence for a few behavioral indicators
+  recordEvidence(session, {
+    indicator_id: "behavioral.delegation.sets_explicit_goals",
+    anchor: 0.67, strength: 2, source: "direct",
+    quote: "test", turn: 1,
+  });
+  recordEvidence(session, {
+    indicator_id: "behavioral.description.iterates_and_refines",
+    anchor: 1.0, strength: 3, source: "direct",
+    quote: "test", turn: 2,
+  });
+
+  const behMean = computeRadarMean(session, "behavioral");
+  assert("Behavioral radar mean is a number", typeof behMean === "number");
+  assert("Behavioral mean > 0.5 (has high evidence)", behMean > 0.5);
+
+  // Unprobed radar should be near 0.5
+  const opMean = computeRadarMean(session, "operational");
+  assert("Operational mean ~ 0.5 (unprobed)", approx(opMean, 0.5, 0.05));
 }
 
-// ── Test 15: Empty batch rejected ──
-async function testEmptyBatchRejected() {
-  console.log("\n10. Empty batch is rejected (schema-level: minItems 1)");
-  // In the actual server, zod validates minItems. Here we verify the constraint exists.
-  assert(
-    "Empty array would fail z.array().min(1) validation",
-    true // This is enforced by the zod schema in index.ts; verified by inspection
-  );
-}
+// ── Run ─────────────────────────────────────────────
 
-// ── Run all tests ──
 async function run() {
-  console.log("=== NewCo Baseline MCP Server v2 — Test Suite ===");
+  console.log("NewCo Baseline Bayesian MCP Server — Test Suite\n");
 
-  const sessionIds: string[] = [];
+  await testBetaMath();
+  await testRecordEvidence();
+  await testSourceWeighting();
+  await testCorrelationPropagation();
+  await testNegativeCorrelation();
+  await testProbeSelection();
+  await testStoppingConditions();
+  await testSummarySkeleton();
+  await testMetadataPriors();
+  await testCorrelationMatrix();
+  await testProbeLibrary();
+  await testStoragePersistence();
+  await testWorkedExample();
+  await testRadarMeans();
 
-  sessionIds.push(await testBatchedCheckpoint());
-  sessionIds.push(await testMergedStateEquivalence());
-  sessionIds.push(await testCrashRecovery());
-  sessionIds.push(await testUnknownIndicator());
-  sessionIds.push(await testDuplicateLastWins());
-  sessionIds.push(await testFinalizedSessionRejectsUpdates());
-  sessionIds.push(await testDeprecatedSingularTool());
-  sessionIds.push(await testReplayCheckpoints());
-  sessionIds.push(await testInferenceTypes());
-  testIndicatorRegistryQueryable();
-  sessionIds.push(await testEnrichedClassificationSummary());
-  sessionIds.push(await testFinalizeEnrichedResponse());
-  testStorageDataDirReadable();
-  testIndicatorRegistry();
-  await testEmptyBatchRejected();
-
-  // Cleanup
-  const { unlink } = await import("node:fs/promises");
-  for (const id of sessionIds) {
-    try {
-      await unlink(join(TEST_DATA_DIR, `${id}.json`));
-    } catch {}
-  }
-
-  console.log(`\n${"=".repeat(40)}`);
-  console.log(`${passed} passed, ${failed} failed out of ${passed + failed} checks.`);
-
-  if (failed > 0) {
-    console.log("\n=== SOME TESTS FAILED ===");
-    process.exit(1);
-  } else {
-    console.log("\n=== ALL TESTS PASSED ===");
-    process.exit(0);
-  }
+  console.log(`\n${passed + failed} checks: ${passed} passed, ${failed} failed`);
+  if (failed > 0) process.exit(1);
 }
 
 run().catch((err) => {
-  console.error("Test failed:", err);
+  console.error("Test runner failed:", err);
   process.exit(1);
 });
