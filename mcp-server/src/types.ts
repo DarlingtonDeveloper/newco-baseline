@@ -11,12 +11,14 @@ export interface SessionMetadata {
   [key: string]: unknown;
 }
 
+export type InferenceType = "direct" | "incidental" | "correlated" | "metadata";
+
 export interface IndicatorScore {
   indicator_id: string;
   estimate: number;
   confidence: number;
   evidence: string;
-  inference_type: "direct" | "correlated";
+  inference_type: InferenceType;
   updated_at: string;
 }
 
@@ -25,7 +27,7 @@ export interface IndicatorUpdate {
   estimate: number;
   confidence: number;
   evidence: string;
-  inference_type: "direct" | "correlated";
+  inference_type: InferenceType;
 }
 
 export interface Checkpoint {
@@ -45,6 +47,15 @@ export interface SessionSummary {
   strengths: string[];
   growth_areas: string[];
   practice_suggestion: string;
+  coverage?: {
+    total_indicators: number;
+    directly_probed: number;
+    incidental: number;
+    correlated: number;
+    metadata: number;
+    unscored: number;
+  };
+  flags?: string[];
 }
 
 export interface Session {

@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Session, Checkpoint, IndicatorUpdate } from "../src/types.js";
+import type { Session, Checkpoint, IndicatorUpdate, InferenceType } from "../src/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TEST_DATA_DIR = join(process.cwd(), "data", "test-sessions");
@@ -51,14 +51,15 @@ async function createTestSession(): Promise<Session> {
 function makeUpdate(
   indicatorId: string,
   estimate: number = 0.75,
-  confidence: number = 0.70
+  confidence: number = 0.70,
+  inferenceType: InferenceType = "direct"
 ): IndicatorUpdate {
   return {
     indicator_id: indicatorId,
     estimate,
     confidence,
     evidence: `Test evidence for ${indicatorId}`,
-    inference_type: "direct",
+    inference_type: inferenceType,
   };
 }
 
@@ -403,7 +404,153 @@ function testIndicatorRegistry() {
   );
 }
 
-// ── Test 10: Empty batch rejected ──
+// ── Test 10: All four inference_type values persist correctly ──
+async function testInferenceTypes() {
+  console.log("\n10. All four inference_type values persist correctly");
+  const session = await createTestSession();
+
+  const updates = [
+    makeUpdate("behavioral.delegation.sets_explicit_goals", 0.90, 0.85, "direct"),
+    makeUpdate("behavioral.delegation.decides_task_fit", 0.80, 0.65, "incidental"),
+    makeUpdate("behavioral.delegation.sets_collaboration_terms", 0.70, 0.50, "correlated"),
+    makeUpdate("behavioral.description.provides_context", 0.60, 0.40, "metadata"),
+  ];
+
+  const cp = makeCheckpoint(updates, "scheduled", 5);
+  storage.appendCheckpoint(session, cp);
+  await storage.save(session);
+
+  const loaded = await storage.load(session.session_id);
+  assert(
+    "direct inference_type persisted",
+    loaded!.indicator_scores["behavioral.delegation.sets_explicit_goals"].inference_type === "direct"
+  );
+  assert(
+    "incidental inference_type persisted",
+    loaded!.indicator_scores["behavioral.delegation.decides_task_fit"].inference_type === "incidental"
+  );
+  assert(
+    "correlated inference_type persisted",
+    loaded!.indicator_scores["behavioral.delegation.sets_collaboration_terms"].inference_type === "correlated"
+  );
+  assert(
+    "metadata inference_type persisted",
+    loaded!.indicator_scores["behavioral.description.provides_context"].inference_type === "metadata"
+  );
+
+  return session.session_id;
+}
+
+// ── Test 11: Indicator registry is queryable ──
+function testIndicatorRegistryQueryable() {
+  console.log("\n11. Indicator registry is queryable (list_indicators contract)");
+  assert("Registry has version field", typeof registry.version === "string");
+  assert("Registry has indicators array", Array.isArray(registry.indicators));
+  assert("Registry has 51 indicators", registry.indicators.length === 51);
+  assert(
+    "Registry is JSON-serializable",
+    JSON.parse(JSON.stringify(registry)).indicators.length === 51
+  );
+}
+
+// ── Test 12: Enriched classification summary ──
+async function testEnrichedClassificationSummary() {
+  console.log("\n12. Enriched classification summary with coverage and flags");
+  const session = await createTestSession();
+
+  session.summary = {
+    radar_means: { behavioral: 0.86, technical: 0.83, operational: 0.82 },
+    strengths: ["operational.mcp_integrations.mcp_server_use"],
+    growth_areas: ["technical.memory_retrieval.kv_cache"],
+    practice_suggestion: "Try a prefix-cache experiment",
+    coverage: {
+      total_indicators: 51,
+      directly_probed: 12,
+      incidental: 13,
+      correlated: 16,
+      metadata: 0,
+      unscored: 10,
+    },
+    flags: ["partial_completion"],
+  };
+  await storage.save(session);
+
+  const loaded = await storage.load(session.session_id);
+  assert("Coverage field persisted", loaded!.summary!.coverage !== undefined);
+  assert(
+    "Coverage total_indicators is 51",
+    loaded!.summary!.coverage!.total_indicators === 51
+  );
+  assert(
+    "Coverage directly_probed is 12",
+    loaded!.summary!.coverage!.directly_probed === 12
+  );
+  assert(
+    "Coverage unscored is 10",
+    loaded!.summary!.coverage!.unscored === 10
+  );
+  assert("Flags field persisted", loaded!.summary!.flags !== undefined);
+  assert(
+    "Flags contains partial_completion",
+    loaded!.summary!.flags!.includes("partial_completion")
+  );
+
+  return session.session_id;
+}
+
+// ── Test 13: Finalize returns enriched response ──
+async function testFinalizeEnrichedResponse() {
+  console.log("\n13. Finalize session returns enriched response data");
+  const session = await createTestSession();
+
+  // Add some indicators
+  const updates = [
+    makeUpdate("behavioral.delegation.sets_explicit_goals", 0.90, 0.85, "direct"),
+    makeUpdate("technical.tool_use.mcp", 1.00, 0.95, "direct"),
+  ];
+  const cp = makeCheckpoint(updates, "scheduled", 10);
+  storage.appendCheckpoint(session, cp);
+
+  session.summary = {
+    radar_means: { behavioral: 0.90, technical: 1.00, operational: 0.00 },
+    strengths: ["technical.tool_use.mcp"],
+    growth_areas: ["technical.memory_retrieval.kv_cache"],
+    practice_suggestion: "Test practice",
+  };
+
+  session.end_time = new Date().toISOString();
+  session.duration_minutes = 15;
+  session.completion_state = "partial";
+  session.consent_to_share_with_org = false;
+  await storage.save(session);
+
+  const loaded = await storage.load(session.session_id);
+  assert(
+    "Finalized session has 2 indicators",
+    Object.keys(loaded!.indicator_scores).length === 2
+  );
+  assert(
+    "Finalized session has summary",
+    loaded!.summary !== undefined
+  );
+  assert(
+    "Finalized session is partial",
+    loaded!.completion_state === "partial"
+  );
+
+  return session.session_id;
+}
+
+// ── Test 14: Storage dataDir is publicly readable ──
+function testStorageDataDirReadable() {
+  console.log("\n14. Storage dataDir is publicly readable for finalize_session path");
+  assert(
+    "dataDir is accessible",
+    typeof storage.dataDir === "string" && storage.dataDir.length > 0
+  );
+}
+
+// ── Test 15: Empty batch rejected ──
 async function testEmptyBatchRejected() {
   console.log("\n10. Empty batch is rejected (schema-level: minItems 1)");
   // In the actual server, zod validates minItems. Here we verify the constraint exists.
@@ -427,6 +574,11 @@ async function run() {
   sessionIds.push(await testFinalizedSessionRejectsUpdates());
   sessionIds.push(await testDeprecatedSingularTool());
   sessionIds.push(await testReplayCheckpoints());
+  sessionIds.push(await testInferenceTypes());
+  testIndicatorRegistryQueryable();
+  sessionIds.push(await testEnrichedClassificationSummary());
+  sessionIds.push(await testFinalizeEnrichedResponse());
+  testStorageDataDirReadable();
   testIndicatorRegistry();
   await testEmptyBatchRejected();
 

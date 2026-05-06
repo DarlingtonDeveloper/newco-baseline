@@ -3,7 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SessionStorage } from "./storage.js";
 import type { Session, Checkpoint } from "./types.js";
@@ -20,7 +20,7 @@ const storage = new SessionStorage(process.env.BASELINE_DATA_DIR);
 
 const server = new McpServer({
   name: "newco-baseline",
-  version: "0.2.0",
+  version: "0.3.0",
 });
 
 function sessionNotFound() {
@@ -64,7 +64,24 @@ server.tool(
   }
 );
 
-// Tool 2: log_metadata
+// Tool 2: list_indicators
+server.tool(
+  "list_indicators",
+  "Returns the canonical indicator registry. Call once at session start to scope all updates to known IDs. Read-only.",
+  {},
+  async () => {
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify(registry),
+        },
+      ],
+    };
+  }
+);
+
+// Tool 3: log_metadata
 server.tool(
   "log_metadata",
   "Log session metadata captured during the opening phase (tools used, frequency, etc.).",
@@ -122,7 +139,7 @@ server.tool(
           evidence: z
             .string()
             .describe("Verbatim quote when available; behavioral description otherwise."),
-          inference_type: z.enum(["direct", "correlated"]),
+          inference_type: z.enum(["direct", "incidental", "correlated", "metadata"]),
         })
       )
       .min(1)
@@ -204,8 +221,8 @@ server.tool(
       .string()
       .describe("Verbatim quote or behavioral description supporting this score"),
     inference_type: z
-      .enum(["direct", "correlated"])
-      .describe("Whether this was directly probed or inferred via correlation"),
+      .enum(["direct", "incidental", "correlated", "metadata"])
+      .describe("How this indicator was informed"),
   },
   async ({
     session_id,
@@ -288,11 +305,26 @@ server.tool(
     practice_suggestion: z
       .string()
       .describe("One specific practice to try this week"),
+    coverage: z
+      .object({
+        total_indicators: z.number().int().describe("Total indicators in registry (51)"),
+        directly_probed: z.number().int().describe("Indicators with inference_type=direct"),
+        incidental: z.number().int().describe("Indicators with inference_type=incidental"),
+        correlated: z.number().int().describe("Indicators with inference_type=correlated"),
+        metadata: z.number().int().describe("Indicators with inference_type=metadata"),
+        unscored: z.number().int().describe("Indicators never scored"),
+      })
+      .optional()
+      .describe("Provenance breakdown of indicator coverage"),
+    flags: z
+      .array(z.string())
+      .optional()
+      .describe("Quality flags — e.g. confidence_floor_breached, partial_completion, non_technical_role_operational_zeroed"),
   },
-  async ({ session_id, radar_means, strengths, growth_areas, practice_suggestion }) => {
+  async ({ session_id, radar_means, strengths, growth_areas, practice_suggestion, coverage, flags }) => {
     const session = await storage.load(session_id);
     if (!session) return sessionNotFound();
-    session.summary = { radar_means, strengths, growth_areas, practice_suggestion };
+    session.summary = { radar_means, strengths, growth_areas, practice_suggestion, coverage, flags };
     await storage.save(session);
     return {
       content: [{ type: "text" as const, text: JSON.stringify({ ok: true }) }],
@@ -330,9 +362,26 @@ server.tool(
     session.consent_to_share_with_org = consent_to_share_with_org;
     await storage.save(session);
 
-    const record_uri = `file://${process.cwd()}/data/sessions/${session_id}.json`;
+    const sessionPath = resolve(storage.dataDir, `${session_id}.json`);
+    const record_uri = `file://${sessionPath.replace(/\\/g, "/")}`;
+
+    const indicators_scored = Object.keys(session.indicator_scores).length;
+    const total_indicators = registry.indicators.length;
+
     return {
-      content: [{ type: "text" as const, text: JSON.stringify({ record_uri }) }],
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify({
+            record_uri,
+            completion_state,
+            duration_minutes,
+            indicators_scored,
+            total_indicators,
+            summary: session.summary ?? null,
+          }),
+        },
+      ],
     };
   }
 );

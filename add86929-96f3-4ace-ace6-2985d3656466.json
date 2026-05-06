@@ -1,0 +1,674 @@
+{
+  "session_id": "add86929-96f3-4ace-ace6-2985d3656466",
+  "user_id": "mike-ajijola-2026-05-05",
+  "user_metadata": {
+    "name": "Mike Ajijola",
+    "role": "Enterprise Solutions Architect",
+    "organisation": "The Access Group"
+  },
+  "indicator_scores": {
+    "behavioral.description.iterates_and_refines": {
+      "indicator_id": "behavioral.description.iterates_and_refines",
+      "estimate": 0.95,
+      "confidence": 0.9,
+      "evidence": "'Iterated until it was correct because in that case I was the expert' - describes iteration as default, distinguishes expert vs non-expert iteration patterns, builds iteration loops into agents",
+      "inference_type": "direct",
+      "updated_at": "2026-05-05T22:16:12.321Z"
+    },
+    "behavioral.delegation.decides_task_fit": {
+      "indicator_id": "behavioral.delegation.decides_task_fit",
+      "estimate": 0.9,
+      "confidence": 0.85,
+      "evidence": "Distinguishes when expert in loop vs not, uses 'know work outputs e.g. the target table' to anchor agent tasks, picks tools based on user workflow",
+      "inference_type": "direct",
+      "updated_at": "2026-05-05T22:16:12.321Z"
+    },
+    "behavioral.delegation.sets_explicit_goals": {
+      "indicator_id": "behavioral.delegation.sets_explicit_goals",
+      "estimate": 0.9,
+      "confidence": 0.8,
+      "evidence": "'Clearly define the target state in engagement with the final user' as guiding principle for tool selection",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:16:12.321Z"
+    },
+    "behavioral.delegation.sets_collaboration_terms": {
+      "indicator_id": "behavioral.delegation.sets_collaboration_terms",
+      "estimate": 0.8,
+      "confidence": 0.65,
+      "evidence": "Sets up frontier model to design prompts/evals for smaller model, places experts in loop with defined target state",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:16:12.321Z"
+    },
+    "behavioral.description.provides_context": {
+      "indicator_id": "behavioral.description.provides_context",
+      "estimate": 0.85,
+      "confidence": 0.7,
+      "evidence": "Anchors agent decomposition to concrete artifacts (target table); sets up structured target states",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:16:12.321Z"
+    },
+    "behavioral.discernment.questions_reasoning": {
+      "indicator_id": "behavioral.discernment.questions_reasoning",
+      "estimate": 0.85,
+      "confidence": 0.8,
+      "evidence": "Passes reasoning logs through another LLM to find divergence from initial task, identifies 'tangential' subtasks",
+      "inference_type": "direct",
+      "updated_at": "2026-05-05T22:16:12.321Z"
+    },
+    "behavioral.discernment.identifies_missing_context": {
+      "indicator_id": "behavioral.discernment.identifies_missing_context",
+      "estimate": 0.85,
+      "confidence": 0.7,
+      "evidence": "Identifies subtask decomposition drift; constrains planner with known work outputs to prevent it",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:16:12.321Z"
+    },
+    "behavioral.discernment.checks_facts": {
+      "indicator_id": "behavioral.discernment.checks_facts",
+      "estimate": 0.8,
+      "confidence": 0.75,
+      "evidence": "'If i'm not the expert i will find one'; uses multiple experts; sometimes uses another LLM as check",
+      "inference_type": "direct",
+      "updated_at": "2026-05-05T22:16:12.321Z"
+    },
+    "behavioral.diligence.verifies_before_sharing": {
+      "indicator_id": "behavioral.diligence.verifies_before_sharing",
+      "estimate": 0.75,
+      "confidence": 0.6,
+      "evidence": "Stakes-graded verification implied by expert-finding behaviour; ran test suites to validate function-gemma routing",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:16:12.321Z"
+    },
+    "behavioral.governance.routes_data_correctly": {
+      "indicator_id": "behavioral.governance.routes_data_correctly",
+      "estimate": 0.95,
+      "confidence": 0.9,
+      "evidence": "Built Databricks MCP scoped to user RBAC, AI 'can't do anything they can't do', refusal with escalation path on missing permissions",
+      "inference_type": "direct",
+      "updated_at": "2026-05-05T22:16:12.321Z"
+    },
+    "behavioral.governance.recognises_confidentiality_posture": {
+      "indicator_id": "behavioral.governance.recognises_confidentiality_posture",
+      "estimate": 0.95,
+      "confidence": 0.85,
+      "evidence": "Trains people on self-governing data exposure; uses litellm proxy for org-wide routing; built RBAC-aware MCP",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:16:12.321Z"
+    },
+    "behavioral.composition.orchestrates_across_tools": {
+      "indicator_id": "behavioral.composition.orchestrates_across_tools",
+      "estimate": 0.9,
+      "confidence": 0.85,
+      "evidence": "Litellm proxy for org-wide routing; chose AI-platform-agnostic protocol (MCP) for Databricks because users have different interfaces",
+      "inference_type": "direct",
+      "updated_at": "2026-05-05T22:16:12.321Z"
+    },
+    "behavioral.composition.configures_own_variant": {
+      "indicator_id": "behavioral.composition.configures_own_variant",
+      "estimate": 0.85,
+      "confidence": 0.65,
+      "evidence": "Built custom MCP server, function-gemma hotkey tool with tested prompts, multiple custom agents",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:16:12.321Z"
+    },
+    "technical.model_fundamentals.probabilistic_generation": {
+      "indicator_id": "technical.model_fundamentals.probabilistic_generation",
+      "estimate": 0.7,
+      "confidence": 0.65,
+      "evidence": "Lists temperature config and reasoning depth as hallucination causes but says 'wouldn't normally go into that detail' - operational rather than expert articulation",
+      "inference_type": "direct",
+      "updated_at": "2026-05-05T22:16:12.321Z"
+    },
+    "technical.evals.model_selection": {
+      "indicator_id": "technical.evals.model_selection",
+      "estimate": 0.95,
+      "confidence": 0.9,
+      "evidence": "Newest frontier models for building, fine-tuned for local; FunctionGemma 270M chosen for local hotkey routing; uses litellm to route at org level",
+      "inference_type": "direct",
+      "updated_at": "2026-05-05T22:16:12.321Z"
+    },
+    "technical.evals.eval_frameworks": {
+      "indicator_id": "technical.evals.eval_frameworks",
+      "estimate": 0.85,
+      "confidence": 0.8,
+      "evidence": "Used frontier model to design and evaluate prompts for small model 'until we had the best prompts to make it most accurate'",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:16:12.321Z"
+    },
+    "technical.tool_use.function_calling": {
+      "indicator_id": "technical.tool_use.function_calling",
+      "estimate": 0.95,
+      "confidence": 0.9,
+      "evidence": "Built FunctionGemma-based hotkey-as-function dispatcher; understands per-shortcut function schema design",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:16:12.321Z"
+    },
+    "technical.tool_use.mcp": {
+      "indicator_id": "technical.tool_use.mcp",
+      "estimate": 1,
+      "confidence": 0.95,
+      "evidence": "Built Databricks MCP scoped to user RBAC, surfaced across multiple channels for different user profiles",
+      "inference_type": "direct",
+      "updated_at": "2026-05-05T22:16:12.321Z"
+    },
+    "technical.tool_use.agentic_patterns": {
+      "indicator_id": "technical.tool_use.agentic_patterns",
+      "estimate": 0.95,
+      "confidence": 0.9,
+      "evidence": "Built unattended data migration agent with stakeholder-input loops; anchors decomposition to known outputs to prevent drift; reasoning-log-through-LLM debugging pattern",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:16:12.321Z"
+    },
+    "technical.memory_retrieval.rag": {
+      "indicator_id": "technical.memory_retrieval.rag",
+      "estimate": 0.95,
+      "confidence": 0.9,
+      "evidence": "omni-cede positioned as graph-native + RAG + context window; decision tree by iteration loops: long-context+graph for long loops, RAG for 1-few loops, especially if remote store",
+      "inference_type": "direct",
+      "updated_at": "2026-05-05T22:16:12.321Z"
+    },
+    "technical.memory_retrieval.embeddings": {
+      "indicator_id": "technical.memory_retrieval.embeddings",
+      "estimate": 0.85,
+      "confidence": 0.65,
+      "evidence": "Building omni-cede memory infrastructure (HNSW, embeddings)",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:16:12.321Z"
+    },
+    "technical.prompting.structured_outputs": {
+      "indicator_id": "technical.prompting.structured_outputs",
+      "estimate": 0.85,
+      "confidence": 0.7,
+      "evidence": "Function calling at 270M scale with per-shortcut schemas; structured target tables anchor agent outputs",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:16:12.321Z"
+    },
+    "operational.mcp_integrations.mcp_server_use": {
+      "indicator_id": "operational.mcp_integrations.mcp_server_use",
+      "estimate": 1,
+      "confidence": 0.95,
+      "evidence": "Built custom Databricks MCP scoped to RBAC",
+      "inference_type": "direct",
+      "updated_at": "2026-05-05T22:16:12.321Z"
+    },
+    "operational.mcp_integrations.custom_integration": {
+      "indicator_id": "operational.mcp_integrations.custom_integration",
+      "estimate": 1,
+      "confidence": 0.9,
+      "evidence": "Custom Databricks MCP with user-scoped RBAC, refusal+escalation on permission gaps, surfaced across multiple channels",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:16:12.321Z"
+    },
+    "operational.apis.direct_api_use": {
+      "indicator_id": "operational.apis.direct_api_use",
+      "estimate": 0.9,
+      "confidence": 0.75,
+      "evidence": "Uses litellm proxy for org-wide LLM routing, builds agents that hit LLM APIs",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:16:12.321Z"
+    },
+    "behavioral.description.specifies_format": {
+      "indicator_id": "behavioral.description.specifies_format",
+      "estimate": 0.85,
+      "confidence": 0.6,
+      "evidence": "Builds agents with structured outputs (target tables); per-shortcut function schemas at FunctionGemma scale",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:17:12.306Z"
+    },
+    "behavioral.diligence.attributes_honestly": {
+      "indicator_id": "behavioral.diligence.attributes_honestly",
+      "estimate": 0.7,
+      "confidence": 0.55,
+      "evidence": "Implied by enterprise-architect role at Access Group with governance scope; not directly probed",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:17:12.306Z"
+    },
+    "behavioral.diligence.considers_downstream": {
+      "indicator_id": "behavioral.diligence.considers_downstream",
+      "estimate": 0.85,
+      "confidence": 0.6,
+      "evidence": "Considers different user profiles across org when surfacing Databricks MCP; designs for downstream stakeholders",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:17:12.306Z"
+    },
+    "behavioral.governance.documents_ai_use": {
+      "indicator_id": "behavioral.governance.documents_ai_use",
+      "estimate": 0.7,
+      "confidence": 0.5,
+      "evidence": "Governance-scope role at Access Group across 22 divisions; trains people on data self-governance; builds RBAC-aware tools",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:17:12.306Z"
+    },
+    "technical.prompting.system_vs_user_roles": {
+      "indicator_id": "technical.prompting.system_vs_user_roles",
+      "estimate": 0.7,
+      "confidence": 0.5,
+      "evidence": "Uses frontier-designed prompts and tested prompt sets for FunctionGemma; not directly probed on system/user role mechanics",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:17:12.306Z"
+    },
+    "technical.prompting.few_shot_and_cot": {
+      "indicator_id": "technical.prompting.few_shot_and_cot",
+      "estimate": 0.75,
+      "confidence": 0.5,
+      "evidence": "Iterated test suites for FunctionGemma to find best prompts; not directly probed on few-shot vs zero-shot framing",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:17:12.306Z"
+    },
+    "technical.memory_retrieval.kv_cache": {
+      "indicator_id": "technical.memory_retrieval.kv_cache",
+      "estimate": 0.5,
+      "confidence": 0.3,
+      "evidence": "Not directly probed; building HNSW-based memory infrastructure suggests some prefix-cache awareness but not demonstrated",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:17:12.306Z"
+    },
+    "technical.evals.production_measurement": {
+      "indicator_id": "technical.evals.production_measurement",
+      "estimate": 0.55,
+      "confidence": 0.4,
+      "evidence": "Not directly probed; uses agents with debug-via-LLM pattern that catches agent drift",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:17:12.306Z"
+    },
+    "operational.cli_tooling.terminal": {
+      "indicator_id": "operational.cli_tooling.terminal",
+      "estimate": 0.75,
+      "confidence": 0.5,
+      "evidence": "Building Rust-based memory infra (omni-cede, cortex-embedded), uses MCP/CLI tooling - terminal use highly likely; not directly probed",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:17:12.306Z"
+    },
+    "operational.cli_tooling.version_control": {
+      "indicator_id": "operational.cli_tooling.version_control",
+      "estimate": 0.7,
+      "confidence": 0.5,
+      "evidence": "Multiple GitHub repos under MikeSquared-Agency org; not directly probed on advanced git workflows",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:17:12.306Z"
+    },
+    "operational.cli_tooling.ai_native_dev_tools": {
+      "indicator_id": "operational.cli_tooling.ai_native_dev_tools",
+      "estimate": 0.8,
+      "confidence": 0.5,
+      "evidence": "Building voice tool, agent infra, MCP servers - likely uses Claude Code/Cursor; not directly probed",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:17:12.306Z"
+    },
+    "operational.apis.cost_and_rate_awareness": {
+      "indicator_id": "operational.apis.cost_and_rate_awareness",
+      "estimate": 0.65,
+      "confidence": 0.4,
+      "evidence": "Uses litellm proxy implies cost/rate awareness at org scale; not directly probed",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:17:12.306Z"
+    },
+    "operational.apis.error_handling": {
+      "indicator_id": "operational.apis.error_handling",
+      "estimate": 0.7,
+      "confidence": 0.45,
+      "evidence": "Refusal+escalation pattern in Databricks MCP; not directly probed on retries/fallbacks/logging",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:17:12.306Z"
+    },
+    "operational.mcp_integrations.connector_configuration": {
+      "indicator_id": "operational.mcp_integrations.connector_configuration",
+      "estimate": 0.7,
+      "confidence": 0.45,
+      "evidence": "Uses litellm proxy and likely M365/Google connectors at Access Group scale; not directly probed",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:17:12.306Z"
+    },
+    "operational.ai_code.code_generation": {
+      "indicator_id": "operational.ai_code.code_generation",
+      "estimate": 0.8,
+      "confidence": 0.5,
+      "evidence": "Building agents and infrastructure; not directly probed on AI code generation habits",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:17:12.306Z"
+    },
+    "operational.ai_code.code_review": {
+      "indicator_id": "operational.ai_code.code_review",
+      "estimate": 0.7,
+      "confidence": 0.45,
+      "evidence": "Building Rust embedded memory infra, multiple production-grade tools; not directly probed on review workflow",
+      "inference_type": "correlated",
+      "updated_at": "2026-05-05T22:17:12.306Z"
+    }
+  },
+  "checkpoints": [
+    {
+      "checkpoint_id": "53e516ef-1079-42d3-ba2b-fd148b0abdff",
+      "checkpoint_reason": "scheduled",
+      "turn_number": 12,
+      "timestamp": "2026-05-05T22:16:12.321Z",
+      "updates": [
+        {
+          "indicator_id": "behavioral.description.iterates_and_refines",
+          "estimate": 0.95,
+          "confidence": 0.9,
+          "evidence": "'Iterated until it was correct because in that case I was the expert' - describes iteration as default, distinguishes expert vs non-expert iteration patterns, builds iteration loops into agents",
+          "inference_type": "direct"
+        },
+        {
+          "indicator_id": "behavioral.delegation.decides_task_fit",
+          "estimate": 0.9,
+          "confidence": 0.85,
+          "evidence": "Distinguishes when expert in loop vs not, uses 'know work outputs e.g. the target table' to anchor agent tasks, picks tools based on user workflow",
+          "inference_type": "direct"
+        },
+        {
+          "indicator_id": "behavioral.delegation.sets_explicit_goals",
+          "estimate": 0.9,
+          "confidence": 0.8,
+          "evidence": "'Clearly define the target state in engagement with the final user' as guiding principle for tool selection",
+          "inference_type": "correlated"
+        },
+        {
+          "indicator_id": "behavioral.delegation.sets_collaboration_terms",
+          "estimate": 0.8,
+          "confidence": 0.65,
+          "evidence": "Sets up frontier model to design prompts/evals for smaller model, places experts in loop with defined target state",
+          "inference_type": "correlated"
+        },
+        {
+          "indicator_id": "behavioral.description.provides_context",
+          "estimate": 0.85,
+          "confidence": 0.7,
+          "evidence": "Anchors agent decomposition to concrete artifacts (target table); sets up structured target states",
+          "inference_type": "correlated"
+        },
+        {
+          "indicator_id": "behavioral.discernment.questions_reasoning",
+          "estimate": 0.85,
+          "confidence": 0.8,
+          "evidence": "Passes reasoning logs through another LLM to find divergence from initial task, identifies 'tangential' subtasks",
+          "inference_type": "direct"
+        },
+        {
+          "indicator_id": "behavioral.discernment.identifies_missing_context",
+          "estimate": 0.85,
+          "confidence": 0.7,
+          "evidence": "Identifies subtask decomposition drift; constrains planner with known work outputs to prevent it",
+          "inference_type": "correlated"
+        },
+        {
+          "indicator_id": "behavioral.discernment.checks_facts",
+          "estimate": 0.8,
+          "confidence": 0.75,
+          "evidence": "'If i'm not the expert i will find one'; uses multiple experts; sometimes uses another LLM as check",
+          "inference_type": "direct"
+        },
+        {
+          "indicator_id": "behavioral.diligence.verifies_before_sharing",
+          "estimate": 0.75,
+          "confidence": 0.6,
+          "evidence": "Stakes-graded verification implied by expert-finding behaviour; ran test suites to validate function-gemma routing",
+          "inference_type": "correlated"
+        },
+        {
+          "indicator_id": "behavioral.governance.routes_data_correctly",
+          "estimate": 0.95,
+          "confidence": 0.9,
+          "evidence": "Built Databricks MCP scoped to user RBAC, AI 'can't do anything they can't do', refusal with escalation path on missing permissions",
+          "inference_type": "direct"
+        },
+        {
+          "indicator_id": "behavioral.governance.recognises_confidentiality_posture",
+          "estimate": 0.95,
+          "confidence": 0.85,
+          "evidence": "Trains people on self-governing data exposure; uses litellm proxy for org-wide routing; built RBAC-aware MCP",
+          "inference_type": "correlated"
+        },
+        {
+          "indicator_id": "behavioral.composition.orchestrates_across_tools",
+          "estimate": 0.9,
+          "confidence": 0.85,
+          "evidence": "Litellm proxy for org-wide routing; chose AI-platform-agnostic protocol (MCP) for Databricks because users have different interfaces",
+          "inference_type": "direct"
+        },
+        {
+          "indicator_id": "behavioral.composition.configures_own_variant",
+          "estimate": 0.85,
+          "confidence": 0.65,
+          "evidence": "Built custom MCP server, function-gemma hotkey tool with tested prompts, multiple custom agents",
+          "inference_type": "correlated"
+        },
+        {
+          "indicator_id": "technical.model_fundamentals.probabilistic_generation",
+          "estimate": 0.7,
+          "confidence": 0.65,
+          "evidence": "Lists temperature config and reasoning depth as hallucination causes but says 'wouldn't normally go into that detail' - operational rather than expert articulation",
+          "inference_type": "direct"
+        },
+        {
+          "indicator_id": "technical.evals.model_selection",
+          "estimate": 0.95,
+          "confidence": 0.9,
+          "evidence": "Newest frontier models for building, fine-tuned for local; FunctionGemma 270M chosen for local hotkey routing; uses litellm to route at org level",
+          "inference_type": "direct"
+        },
+        {
+          "indicator_id": "technical.evals.eval_frameworks",
+          "estimate": 0.85,
+          "confidence": 0.8,
+          "evidence": "Used frontier model to design and evaluate prompts for small model 'until we had the best prompts to make it most accurate'",
+          "inference_type": "correlated"
+        },
+        {
+          "indicator_id": "technical.tool_use.function_calling",
+          "estimate": 0.95,
+          "confidence": 0.9,
+          "evidence": "Built FunctionGemma-based hotkey-as-function dispatcher; understands per-shortcut function schema design",
+          "inference_type": "correlated"
+        },
+        {
+          "indicator_id": "technical.tool_use.mcp",
+          "estimate": 1,
+          "confidence": 0.95,
+          "evidence": "Built Databricks MCP scoped to user RBAC, surfaced across multiple channels for different user profiles",
+          "inference_type": "direct"
+        },
+        {
+          "indicator_id": "technical.tool_use.agentic_patterns",
+          "estimate": 0.95,
+          "confidence": 0.9,
+          "evidence": "Built unattended data migration agent with stakeholder-input loops; anchors decomposition to known outputs to prevent drift; reasoning-log-through-LLM debugging pattern",
+          "inference_type": "correlated"
+        },
+        {
+          "indicator_id": "technical.memory_retrieval.rag",
+          "estimate": 0.95,
+          "confidence": 0.9,
+          "evidence": "omni-cede positioned as graph-native + RAG + context window; decision tree by iteration loops: long-context+graph for long loops, RAG for 1-few loops, especially if remote store",
+          "inference_type": "direct"
+        },
+        {
+          "indicator_id": "technical.memory_retrieval.embeddings",
+          "estimate": 0.85,
+          "confidence": 0.65,
+          "evidence": "Building omni-cede memory infrastructure (HNSW, embeddings)",
+          "inference_type": "correlated"
+        },
+        {
+          "indicator_id": "technical.prompting.structured_outputs",
+          "estimate": 0.85,
+          "confidence": 0.7,
+          "evidence": "Function calling at 270M scale with per-shortcut schemas; structured target tables anchor agent outputs",
+          "inference_type": "correlated"
+        },
+        {
+          "indicator_id": "operational.mcp_integrations.mcp_server_use",
+          "estimate": 1,
+          "confidence": 0.95,
+          "evidence": "Built custom Databricks MCP scoped to RBAC",
+          "inference_type": "direct"
+        },
+        {
+          "indicator_id": "operational.mcp_integrations.custom_integration",
+          "estimate": 1,
+          "confidence": 0.9,
+          "evidence": "Custom Databricks MCP with user-scoped RBAC, refusal+escalation on permission gaps, surfaced across multiple channels",
+          "inference_type": "correlated"
+        },
+        {
+          "indicator_id": "operational.apis.direct_api_use",
+          "estimate": 0.9,
+          "confidence": 0.75,
+          "evidence": "Uses litellm proxy for org-wide LLM routing, builds agents that hit LLM APIs",
+          "inference_type": "correlated"
+        }
+      ]
+    },
+    {
+      "checkpoint_id": "93ed3484-5ca9-4cb2-b58b-5163c1986c13",
+      "checkpoint_reason": "pre_finalize",
+      "turn_number": 13,
+      "timestamp": "2026-05-05T22:17:12.306Z",
+      "updates": [
+        {
+          "indicator_id": "behavioral.description.specifies_format",
+          "estimate": 0.85,
+          "confidence": 0.6,
+          "evidence": "Builds agents with structured outputs (target tables); per-shortcut function schemas at FunctionGemma scale",
+          "inference_type": "correlated"
+        },
+        {
+          "indicator_id": "behavioral.diligence.attributes_honestly",
+          "estimate": 0.7,
+          "confidence": 0.55,
+          "evidence": "Implied by enterprise-architect role at Access Group with governance scope; not directly probed",
+          "inference_type": "correlated"
+        },
+        {
+          "indicator_id": "behavioral.diligence.considers_downstream",
+          "estimate": 0.85,
+          "confidence": 0.6,
+          "evidence": "Considers different user profiles across org when surfacing Databricks MCP; designs for downstream stakeholders",
+          "inference_type": "correlated"
+        },
+        {
+          "indicator_id": "behavioral.governance.documents_ai_use",
+          "estimate": 0.7,
+          "confidence": 0.5,
+          "evidence": "Governance-scope role at Access Group across 22 divisions; trains people on data self-governance; builds RBAC-aware tools",
+          "inference_type": "correlated"
+        },
+        {
+          "indicator_id": "technical.prompting.system_vs_user_roles",
+          "estimate": 0.7,
+          "confidence": 0.5,
+          "evidence": "Uses frontier-designed prompts and tested prompt sets for FunctionGemma; not directly probed on system/user role mechanics",
+          "inference_type": "correlated"
+        },
+        {
+          "indicator_id": "technical.prompting.few_shot_and_cot",
+          "estimate": 0.75,
+          "confidence": 0.5,
+          "evidence": "Iterated test suites for FunctionGemma to find best prompts; not directly probed on few-shot vs zero-shot framing",
+          "inference_type": "correlated"
+        },
+        {
+          "indicator_id": "technical.memory_retrieval.kv_cache",
+          "estimate": 0.5,
+          "confidence": 0.3,
+          "evidence": "Not directly probed; building HNSW-based memory infrastructure suggests some prefix-cache awareness but not demonstrated",
+          "inference_type": "correlated"
+        },
+        {
+          "indicator_id": "technical.evals.production_measurement",
+          "estimate": 0.55,
+          "confidence": 0.4,
+          "evidence": "Not directly probed; uses agents with debug-via-LLM pattern that catches agent drift",
+          "inference_type": "correlated"
+        },
+        {
+          "indicator_id": "operational.cli_tooling.terminal",
+          "estimate": 0.75,
+          "confidence": 0.5,
+          "evidence": "Building Rust-based memory infra (omni-cede, cortex-embedded), uses MCP/CLI tooling - terminal use highly likely; not directly probed",
+          "inference_type": "correlated"
+        },
+        {
+          "indicator_id": "operational.cli_tooling.version_control",
+          "estimate": 0.7,
+          "confidence": 0.5,
+          "evidence": "Multiple GitHub repos under MikeSquared-Agency org; not directly probed on advanced git workflows",
+          "inference_type": "correlated"
+        },
+        {
+          "indicator_id": "operational.cli_tooling.ai_native_dev_tools",
+          "estimate": 0.8,
+          "confidence": 0.5,
+          "evidence": "Building voice tool, agent infra, MCP servers - likely uses Claude Code/Cursor; not directly probed",
+          "inference_type": "correlated"
+        },
+        {
+          "indicator_id": "operational.apis.cost_and_rate_awareness",
+          "estimate": 0.65,
+          "confidence": 0.4,
+          "evidence": "Uses litellm proxy implies cost/rate awareness at org scale; not directly probed",
+          "inference_type": "correlated"
+        },
+        {
+          "indicator_id": "operational.apis.error_handling",
+          "estimate": 0.7,
+          "confidence": 0.45,
+          "evidence": "Refusal+escalation pattern in Databricks MCP; not directly probed on retries/fallbacks/logging",
+          "inference_type": "correlated"
+        },
+        {
+          "indicator_id": "operational.mcp_integrations.connector_configuration",
+          "estimate": 0.7,
+          "confidence": 0.45,
+          "evidence": "Uses litellm proxy and likely M365/Google connectors at Access Group scale; not directly probed",
+          "inference_type": "correlated"
+        },
+        {
+          "indicator_id": "operational.ai_code.code_generation",
+          "estimate": 0.8,
+          "confidence": 0.5,
+          "evidence": "Building agents and infrastructure; not directly probed on AI code generation habits",
+          "inference_type": "correlated"
+        },
+        {
+          "indicator_id": "operational.ai_code.code_review",
+          "estimate": 0.7,
+          "confidence": 0.45,
+          "evidence": "Building Rust embedded memory infra, multiple production-grade tools; not directly probed on review workflow",
+          "inference_type": "correlated"
+        }
+      ]
+    }
+  ],
+  "start_time": "2026-05-05T21:21:36.561Z",
+  "session_metadata": {
+    "tools_used": [
+      "ChatGPT",
+      "Claude",
+      "Copilot"
+    ],
+    "frequency": "daily"
+  },
+  "summary": {
+    "radar_means": {
+      "behavioral": 0.86,
+      "technical": 0.83,
+      "operational": 0.82
+    },
+    "strengths": [
+      "operational.mcp_integrations.mcp_server_use",
+      "behavioral.governance.routes_data_correctly",
+      "behavioral.description.iterates_and_refines"
+    ],
+    "growth_areas": [
+      "technical.memory_retrieval.kv_cache",
+      "technical.evals.production_measurement"
+    ],
+    "practice_suggestion": "For the next omni-cede or agent build, run a deliberate prefix-cache experiment: structure prompts with a stable system+context prefix and measure latency/cost delta with cache hit vs cold call. The mechanical understanding of KV cache economics will sharpen how you architect long-loop graph memory traffic, and the eval pattern transfers directly to production drift measurement."
+  },
+  "end_time": "2026-05-05T22:17:26.845Z",
+  "duration_minutes": 15,
+  "completion_state": "partial",
+  "consent_to_share_with_org": false
+}

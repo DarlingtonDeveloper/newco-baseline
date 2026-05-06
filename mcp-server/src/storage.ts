@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import type { Session, Checkpoint, IndicatorScore } from "./types.js";
 
 export class SessionStorage {
-  private dataDir: string;
+  readonly dataDir: string;
 
   constructor(dataDir?: string) {
     this.dataDir = dataDir ?? join(process.cwd(), "data", "sessions");

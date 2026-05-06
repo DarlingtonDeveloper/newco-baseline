@@ -64,12 +64,13 @@ Start a new conversation. The skill handles the rest: opening, adaptive probing,
 
 | Tool | Purpose |
 |---|---|
+| `list_indicators` | Return the canonical indicator registry (call at session start) |
 | `start_baseline_session` | Begin a new assessment session |
 | `log_metadata` | Record tools used, frequency, role |
 | `log_indicator_updates` | Batch-persist indicator scores at checkpoints (every ~10 turns) |
 | `log_indicator_update` | **Deprecated** — singular version, wraps to checkpoint internally |
-| `log_classification_summary` | Record radar means, strengths, growth areas |
-| `finalize_session` | Close the session with duration and completion state |
+| `log_classification_summary` | Record radar means, strengths, growth areas, coverage, flags |
+| `finalize_session` | Close the session with duration, completion state, and full summary |
 
 ## Session persistence
 
