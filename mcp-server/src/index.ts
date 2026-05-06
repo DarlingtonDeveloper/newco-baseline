@@ -274,7 +274,8 @@ server.tool(
       .describe("How the session ended"),
     consent_to_share_with_org: z
       .boolean()
-      .describe("Whether respondent consents to sharing results with org leadership"),
+      .default(false)
+      .describe("Whether respondent consents to sharing results with org leadership. Defaults to false if not asked."),
     summary_text: z
       .string()
       .optional()

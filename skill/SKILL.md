@@ -117,7 +117,7 @@ After each respondent turn:
 Note: a blank "I don't know" deserves moderate-to-high confidence on a low estimate — the absence of evidence IS the evidence.
 
 4. **Apply correlation propagation** (see below).
-5. **Accumulate updates in working memory.** Track each indicator's current estimate, confidence, and most recent evidence quote in your turn-by-turn reasoning. Do not call `log_indicator_updates` on every turn — see checkpoint cadence in section 9.
+5. **Record evidence.** In math mode, call `record_evidence` for each affected indicator after each turn — the server handles the math. In heuristic mode, accumulate updates in working memory using the rules above.
 
 ### Correlation propagation
 
@@ -171,7 +171,9 @@ At each turn, identify the next probe by reasoning through:
 4. **technical.model_fundamentals.probabilistic_generation** — Quick Technical calibration. If they can explain hallucinations, they have some technical foundation.
 5. **behavioral.composition.orchestrates_across_tools** — Their AI stack. Informs Composition cluster and tool awareness.
 
-After these 5 probes, you'll have enough signal to calibrate the adaptive engine. From here, select probes based on maximum information gain across the remaining low-confidence indicators.
+**Non-technical respondent adaptation:** For respondents whose role and metadata signal low technical depth (knowledge workers, consultants, non-engineering managers), the master signal probe often gets a thin answer because their iteration happens in concrete tasks, not abstract prompting. If the master signal yields a vague response after one follow-up, pivot early to a task-walkthrough probe (e.g., the email-drafting or document-review variant of `behavioral.description.provides_context`). Their iteration behavior is most legible in everyday work output, not in prompting language. Score `iterates_and_refines` from the task walkthrough incidentally rather than waiting for a direct answer.
+
+After these 5 probes (or their non-technical adaptations), you'll have enough signal to calibrate the adaptive engine. From here, select probes based on maximum information gain across the remaining low-confidence indicators.
 
 ### Probe budget and radar pacing
 
@@ -234,7 +236,7 @@ After they answer:
 
 After capturing these three pieces of metadata:
 
-1. **If MCP tools are available**, call `list_indicators`, then `start_baseline_session` with the respondent's info, then `log_metadata` with tools_used and frequency. **If MCP tools are NOT available**, use the canonical indicator IDs embedded in section 2 — those are the source of truth. Never invent or extrapolate indicator IDs beyond that list.
+1. **If MCP tools are available**, call `start_baseline_session` with the respondent's info, then `apply_metadata_priors` with role, tools_used, and frequency. The server applies Bayesian priors and returns the updated state vector. **If MCP tools are NOT available**, use the canonical indicator IDs embedded in section 2 and apply metadata prior shifts manually using the tables below.
 
 2. **Apply metadata priors.** The opening is NOT throwaway — it is a substantial information channel. Before any probe fires, shift priors based on what the metadata reveals:
 
@@ -288,10 +290,9 @@ Apply all metadata shifts as estimate shifts with confidence = 0.30 and provenan
 
 Run the probe selection algorithm from section 4. Ask one probe per turn. After each response:
 
-1. Score all informed indicators.
-2. Apply correlation propagation (section 3).
-3. Accumulate updates in working memory; checkpoint via `log_indicator_updates` if turn count crosses cadence threshold or this turn is unusually update-heavy (see section 9 for checkpoint cadence).
-4. Select next probe.
+1. Classify evidence for each informed indicator (anchor + strength + source).
+2. In math mode: call `record_evidence` for each affected indicator. Server applies Beta update and correlation propagation, returns updated state vector. In heuristic mode: apply update rules and correlations from section 3 manually.
+3. Call `select_next_probe` (math mode) or apply the information-gain reasoning from section 4 (heuristic mode).
 
 **Transitions between radars:** Don't announce "now we're moving to the technical section." Instead, bridge naturally using the transition patterns in section 4.
 
@@ -314,18 +315,13 @@ Adjust your estimate up if responses have been long, down if responses have been
 
 When a stopping condition triggers (see section 6):
 
-1. Flush all remaining indicator updates via `log_indicator_updates` with `checkpoint_reason: "pre_finalize"`.
-2. Calculate **confidence-weighted radar means** using the formula in section 3.
-3. Identify top 3 highest-confidence, highest-scoring indicators (strengths).
-4. Identify 2 lowest-scoring indicators where investment would have highest leverage for this person's role (growth areas).
-5. Generate one specific, concrete practice suggestion tied to their lowest high-confidence indicator.
-6. Calculate **coverage breakdown**: count indicators by inference_type (`direct`, `incidental`, `correlated`, `metadata`, unscored). This feeds the `coverage` field in `log_classification_summary`.
-7. Set **quality flags** as applicable: `partial_completion` (if not all indicators scored), `confidence_floor_breached` (if any radar has mean confidence < 0.40), `non_technical_role_operational_zeroed` (if respondent is non-technical and Operational indicators are mostly 0.00).
-8. Call `log_classification_summary` with radar_means, strengths, growth_areas, practice_suggestion, coverage, and flags.
-9. Generate and deliver the personal summary (template in section 8). **Always include the radar visualisation tables** — respondents expect a visual artefact. Render all three radar tables as part of the summary, not as an afterthought.
+1. Call `generate_summary_skeleton`. The server computes radar means, strengths, growth areas, coverage breakdown, and quality flags from the Beta posteriors. In heuristic mode, compute these manually using the formula in section 3.
+2. Generate one specific, concrete practice suggestion tied to the lowest high-confidence indicator from the skeleton's growth areas.
+3. Generate and deliver the personal summary (template in section 8) using the skeleton data. **Always include the radar visualisation tables** — respondents expect a visual artefact. Render all three radar tables as part of the summary, not as an afterthought.
 10. Ask: "Anything you'd like me to revisit before we close?"
 11. If they push back on a score, engage with evidence. Update if they provide new evidence. Hold if they don't.
-12. Call `finalize_session`.
+12. Ask for sharing consent: "One last thing -- are you happy for these results to be shared with your organisation's programme lead, or would you prefer to keep them private?" Record the answer for `consent_to_share_with_org`. If they don't answer or seem uncertain, default to `false`.
+13. Call `finalize_session`.
 
 ---
 
@@ -550,28 +546,24 @@ Use block characters scaled to 10 characters for 1.00. This renders well in chat
 
 ## 9. Persistence and MCP tool usage
 
-### Checkpoint cadence
+### Evidence recording cadence
 
-Persist accumulated indicator updates to the server in three situations:
+In math mode, call `record_evidence` for each affected indicator immediately after each respondent turn. The server applies the Beta update, propagates correlations, and returns the updated state vector. There is no batching or checkpoint cadence — each piece of evidence is recorded as it occurs. Call once per affected indicator per turn: once with `source: "direct"` for the probe's primary target, additional calls with `source: "incidental"` for indicators mentioned in passing.
 
-1. **Scheduled checkpoint.** Every 10 respondent turns, call `log_indicator_updates` with all indicators whose estimate or confidence has changed since the last checkpoint. Use `checkpoint_reason: "scheduled"` and include `turn_number`.
-2. **Manual checkpoint.** If a turn produces an unusually large state change (e.g., a single answer that informs 10+ indicators), checkpoint immediately. Use `checkpoint_reason: "manual"` and include `turn_number`.
-3. **Pre-finalize checkpoint.** Before calling `log_classification_summary` and `finalize_session`, flush all remaining changes. Use `checkpoint_reason: "pre_finalize"`.
+Between turns, call `select_next_probe` with the list of asked probe IDs and estimated time remaining. The server returns ranked probes by EIG and stopping recommendations.
 
-This keeps live-conversation latency low (1 tool call per checkpoint vs. 50+ singular calls) while bounding the worst-case loss to ~10 turns of state if the conversation drops.
-
-Use `log_indicator_updates` (plural). The singular `log_indicator_update` is deprecated.
+In heuristic mode (no MCP tools), track all state in working memory using the update rules in section 3.
 
 ### When to call each MCP tool
 
 | Tool | When |
 |---|---|
-| `list_indicators` | Once at session start, if MCP tools are available. Confirms the canonical indicator set. (If MCP is unavailable, the embedded list in section 2 is the source of truth.) |
-| `start_baseline_session` | Once, after capturing name/role/tenure in the opening |
-| `log_metadata` | Once, after capturing tools_used and frequency |
-| `log_indicator_updates` | At checkpoint cadence (above). Include `checkpoint_reason` and `turn_number`. Use `inference_type` to record provenance: `direct` for probe targets, `incidental` for indicators informed by a probe whose primary target was elsewhere, `correlated` for correlation-propagation updates with no direct evidence, `metadata` for opening-phase priors. |
-| `log_classification_summary` | Once, after calculating final scores and before delivering the summary |
-| `finalize_session` | Once, as the very last action after the summary is delivered and any follow-up questions resolved |
+| `start_baseline_session` | Once, after capturing name/role in the opening |
+| `apply_metadata_priors` | Once, after capturing role, tools_used, and frequency. Server applies Bayesian priors. |
+| `record_evidence` | After each respondent turn, once per affected indicator. Include indicator_id, anchor (0/0.33/0.67/1), strength (1-3), source, quote, turn number. |
+| `select_next_probe` | Between turns. Pass asked_probes and time_remaining_minutes. Returns ranked probes and stop recommendations. |
+| `generate_summary_skeleton` | Once, when stopping condition triggers. Server computes radar means, strengths, growth areas, coverage, flags. |
+| `finalize_session` | Once, as the very last action after the summary is delivered and consent captured. |
 
 ### Indicator ID format
 
