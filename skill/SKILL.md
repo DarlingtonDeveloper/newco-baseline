@@ -278,7 +278,7 @@ Specific tools carry strong prior information. Examples:
 
 Apply all metadata shifts as estimate shifts with confidence = 0.30 and provenance = "metadata". They are starting priors, not scores. Direct evidence from the conversation overrides them.
 
-3. **Log prior shifts.** If MCP tools are available, include all shifted indicators in your first checkpoint with `inference_type: "metadata"`. This makes the audit trail honest about where the assistant started before any probes fired.
+3. **Log prior shifts.** If MCP tools are available, checkpoint immediately after applying metadata priors — before the first probe. Include all shifted indicators with `inference_type: "metadata"` and `checkpoint_reason: "manual"`, `turn_number: 0`. This makes the audit trail honest about where the assistant started before any probes fired.
 
 4. Transition to Phase 2.
 
@@ -382,11 +382,7 @@ Action: Run standard closing flow (Phase 3).
 
 ### Refusal / discomfort
 
-If the respondent declines to participate or expresses discomfort:
-
-> "That's completely fine. This is entirely voluntary. If you'd prefer, I can do a shorter version — about 10 minutes, covering just the high-level picture. Or we can stop here. Your call."
-
-If they stop, call `finalize_session` with `completion_state: "stopped"`. Don't push.
+Follow Path A from section 6. Offer the shortened version; if they decline that too, finalize as "stopped" and skip summary generation.
 
 ### Score disagreement at close
 
@@ -467,9 +463,9 @@ Generate this at the end of the assessment. This is scaffolding — fill it with
 
 [Render three radar visualisations. For each radar, show dimension names as axes and plot the mean of indicators within each dimension. Use the table format below.]
 
-**Behavioral Fluency**: [mean across 7 dimensions, formatted 0.00-1.00]
-**Technical Understanding**: [mean across 5 dimensions, formatted 0.00-1.00]
-**Operational Deployment**: [mean across 5 dimensions, formatted 0.00-1.00]
+**Behavioral Fluency**: [confidence-weighted mean across 21 indicators, formatted 0.00-1.00]
+**Technical Understanding**: [confidence-weighted mean across 15 indicators, formatted 0.00-1.00]
+**Operational Deployment**: [confidence-weighted mean across 15 indicators, formatted 0.00-1.00]
 
 ### Strengths
 
@@ -1079,7 +1075,7 @@ Each indicator has a primary probe (high information gain) and a backup (if prim
 
 **behavioral.multiplier.surfaces_edge_cases**
 - Primary: "Last time AI failed in a way that mattered, what did you do beyond fixing it for yourself?"
-- Backup: "Have you ever raised an AI failure mode to anyone — manager, vendor, platform team?"
+- Backup: "Have you ever raised an AI failure mode to anyone — your manager, the team that maintains the tool, anyone?"
 - Also informs: behavioral.discernment.questions_reasoning
 
 ### Technical Understanding probes
@@ -1299,7 +1295,8 @@ Use these correlations with the propagation formula in section 3. All correlatio
 | behavioral.multiplier.teaches_colleagues | behavioral.delegation.* | +0.4 |
 | behavioral.multiplier.teaches_colleagues | behavioral.description.* | +0.4 |
 | behavioral.multiplier.teaches_colleagues | behavioral.discernment.* | +0.4 |
-| technical.model_fundamentals.tokenisation_and_context | technical.memory_retrieval.kv_cache | +0.9 |
+| technical.model_fundamentals.tokenisation_and_context | technical.memory_retrieval.kv_cache | +0.4 |
+| technical.memory_retrieval.kv_cache | technical.model_fundamentals.tokenisation_and_context | +0.9 |
 | technical.model_fundamentals.tokenisation_and_context | technical.model_fundamentals.training_vs_inference | +0.4 |
 | technical.model_fundamentals.tokenisation_and_context | technical.model_fundamentals.probabilistic_generation | +0.4 |
 | technical.model_fundamentals.tokenisation_and_context | technical.prompting.* | +0.4 |
@@ -1315,8 +1312,6 @@ Use these correlations with the propagation formula in section 3. All correlatio
 **Wildcard rows:** When a target uses `*` (e.g., `behavioral.delegation.*`), the correlation applies to every indicator in that dimension. Apply the same r to each individually.
 
 **Asymmetric pairs:** Some correlations only flow one direction. If the table has A -> B but not B -> A, do not propagate from B to A. The custom_integration -> function_calling correlation is asymmetric; function_calling does not propagate back to custom_integration.
-
-**General radar-level prior:** When the Behavioral radar mean (confidence-weighted) exceeds 0.67, apply a mild +0.3 upward shift to the prior of all Technical indicators that have not yet been directly probed. This is a one-time prior lift, not a per-turn correlation. Apply it once when the condition is first met.
 
 ---
 

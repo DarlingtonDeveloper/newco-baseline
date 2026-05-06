@@ -130,7 +130,7 @@ export const CORRELATION_MATRIX: Record<string, Record<string, number>> = {
     "operational.apis.direct_api_use": 0.8,
   },
   "technical.model_fundamentals.tokenisation_and_context": {
-    "technical.memory_retrieval.kv_cache": 0.9,
+    "technical.memory_retrieval.kv_cache": 0.4,
     "technical.model_fundamentals.training_vs_inference": 0.4,
     "technical.model_fundamentals.probabilistic_generation": 0.4,
     // Wildcard: technical.prompting.* at +0.4
@@ -141,6 +141,9 @@ export const CORRELATION_MATRIX: Record<string, Record<string, number>> = {
     // kv_cache already has explicit +0.9 which is higher than +0.4, so kept at 0.9
     "technical.memory_retrieval.embeddings": 0.4,
     "technical.memory_retrieval.rag": 0.4,
+  },
+  "technical.memory_retrieval.kv_cache": {
+    "technical.model_fundamentals.tokenisation_and_context": 0.9,
   },
   "operational.cli_tooling.terminal": {
     "operational.cli_tooling.version_control": 0.6,
